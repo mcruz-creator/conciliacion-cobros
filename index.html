@@ -4,111 +4,290 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Conciliación de cobros</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..800;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f5f7fa; --panel: #ffffff; --text: #1d2733; --muted: #5f6b7a; --line: #dde3ea;
-    --accent: #1f4e78; --accent-soft: #e6eef6; --ok: #1e7b45; --warn: #a15c00; --bad: #b3261e;
+    --papel: #f4efe4;
+    --papel-2: #ebe4d4;
+    --hoja: #fbf8f1;
+    --tinta: #1c2a24;
+    --tinta-suave: #5d6a62;
+    --renglon: #d9d0bc;
+    --verde: #1f5c46;
+    --verde-claro: #d5e4d8;
+    --ocre: #b7791f;
+    --ocre-claro: #f1e2c4;
+    --lacre: #a33a2b;
+    --lacre-claro: #f0d6cf;
+   
+    --serif: "Fraunces", Georgia, serif;
+    --sans: "Instrument Sans", "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #12171d; --panel: #1b222b; --text: #e6ebf0; --muted: #9aa6b2; --line: #2c3642;
-      --accent: #7fb2e5; --accent-soft: #1f2d3c; --ok: #5cc98a; --warn: #e0a64a; --bad: #f08a80;
+      --papel: #121a16; --papel-2: #19231e; --hoja: #17211c; --tinta: #ece5d6; --tinta-suave: #9ba69e;
+      --renglon: #2b3a32; --verde: #7cc4a2; --verde-claro: #1f3a2e; --ocre: #e0a94f; --ocre-claro: #3a2f1b;
+      --lacre: #ec8b7b; --lacre-claro: #3d2420;
     }
   }
+  :root[data-theme="dark"] {
+    --papel: #121a16; --papel-2: #19231e; --hoja: #17211c; --tinta: #ece5d6; --tinta-suave: #9ba69e;
+    --renglon: #2b3a32; --verde: #7cc4a2; --verde-claro: #1f3a2e; --ocre: #e0a94f; --ocre-claro: #3a2f1b;
+    --lacre: #ec8b7b; --lacre-claro: #3d2420;
+  }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
-  h1 { font-size: 24px; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 24px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
-  h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  #zona { border: 2px dashed var(--line); border-radius: 10px; padding: 32px 16px; text-align: center; cursor: pointer; transition: .15s; }
-  #zona.encima, #zona:hover { border-color: var(--accent); background: var(--accent-soft); }
-  #zona strong { color: var(--accent); }
-  .lista { list-style: none; padding: 0; margin: 12px 0 0; }
-  .lista li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
-  .lista li:last-child { border-bottom: 0; }
-  .tag { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
-  .tag.falta { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
-  .nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer; }
-  .primario { background: var(--accent); color: var(--panel); font-weight: 600; }
-  .primario:disabled { opacity: .45; cursor: not-allowed; }
-  .secundario { background: transparent; color: var(--muted); border: 1px solid var(--line); }
-  .acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-  .avisos { color: var(--warn); margin: 12px 0 0; padding-left: 18px; }
-  .error { color: var(--bad); font-weight: 600; }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-  .kpi { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-  .kpi .n { font-size: 26px; font-weight: 700; }
-  .kpi .d { color: var(--muted); font-size: 13px; }
-  .kpi.ok .n { color: var(--ok); } .kpi.rev .n { color: var(--warn); } .kpi.bad .n { color: var(--bad); }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-  td.num, th.num { text-align: right; }
-  details summary { cursor: pointer; color: var(--muted); }
-  .cfg { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
-  .cfg label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
-  .cfg input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
-  .regla { font-size: 13px; color: var(--muted); }
-  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--papel); color: var(--tinta);
+    font: 15px/1.55 var(--sans); font-feature-settings: "ss01";
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 56px 16px 72px; }
+
+  /* ------------------------------------------------ encabezado */
+  .membrete { display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+              border-bottom: 1px solid var(--tinta); padding-bottom: 8px;
+              font: 500 11px/1 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--tinta-suave); }
+  h1 { font: 350 clamp(40px, 8vw, 76px)/.95 var(--serif); font-variation-settings: "opsz" 144, "SOFT" 30;
+       letter-spacing: -.025em; margin: 28px 0 0; }
+  h1 em { font-style: italic; font-weight: 300; color: var(--verde); }
+  .bajada { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end;
+            margin: 20px 0 48px; padding-bottom: 20px; border-bottom: 3px double var(--tinta); }
+  .bajada p { margin: 0; max-width: 52ch; color: var(--tinta-suave); }
+  .candado { display: inline-flex; gap: 8px; align-items: center; font-size: 12px; color: var(--verde);
+             border: 1px solid currentColor; border-radius: 99px; padding: 4px 12px; white-space: nowrap; }
+
+  /* ------------------------------------------------ secciones */
+  .seccion { margin-bottom: 44px; }
+  .rotulo { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; }
+  .rotulo .num { font: italic 400 30px/1 var(--serif); color: var(--verde); min-width: 1.4em; }
+  .rotulo h2 { font: 500 22px/1.2 var(--serif); margin: 0; letter-spacing: -.01em; }
+  .rotulo .extra { margin-left: auto; font: 13px var(--mono); color: var(--tinta-suave); }
+
+  /* zona para soltar */
+  #zona {
+    position: relative; display: grid; place-items: center; text-align: center; gap: 6px;
+    padding: 40px 20px; cursor: pointer; background: var(--hoja);
+    border: 1.5px dashed var(--tinta-suave); border-radius: 3px;
+    transition: border-color .2s, background .2s, transform .2s;
+  }
+  #zona:hover, #zona:focus-visible, #zona.encima { border-color: var(--verde); background: var(--verde-claro); outline: none; }
+  #zona.encima { transform: scale(1.01); }
+  #zona .grande { font: 400 21px/1.3 var(--serif); }
+  #zona .grande u { text-decoration-color: var(--verde); text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
+  #zona .chico { font-size: 13px; color: var(--tinta-suave); }
+  .flecha { width: 34px; height: 34px; color: var(--verde); margin-bottom: 4px; transition: transform .3s; }
+  #zona:hover .flecha, #zona.encima .flecha { transform: translateY(3px); }
+
+  /* fichas de archivos */
+  .fichas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: 18px;
+            border-top: 1px solid var(--tinta); border-bottom: 1px solid var(--tinta); }
+  .ficha { position: relative; padding: 14px 14px 16px; border-right: 1px solid var(--renglon); min-height: 104px; }
+  .ficha:last-child { border-right: 0; }
+  .ficha .tipo { font: 600 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--tinta-suave); }
+  .ficha .ext { font: 12px var(--mono); color: var(--tinta-suave); margin-top: 6px; }
+  .ficha .arch { font: 13px/1.35 var(--mono); margin-top: 10px; padding-bottom: 26px; word-break: break-all; }
+  .ficha .sello {
+    position: absolute; right: 10px; bottom: 10px; font: 700 10px/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    padding: 5px 7px; border: 1.5px solid currentColor; border-radius: 2px; transform: rotate(-6deg); opacity: 0;
+  }
+  .ficha.ok .sello { color: var(--verde); opacity: 1; animation: sellar .35s cubic-bezier(.2,1.6,.4,1); }
+  .ficha.ok .tipo { color: var(--verde); }
+  .ficha.falta .arch { color: var(--tinta-suave); font-style: italic; font-family: var(--serif); }
+  @keyframes sellar { from { transform: rotate(-18deg) scale(1.8); opacity: 0; } to { transform: rotate(-6deg) scale(1); opacity: 1; } }
+
+  .ignorados { margin: 12px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--lacre); }
+  .ignorados li::before { content: "✕  "; }
+
+  .acciones { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 22px; }
+  button { font: 600 15px/1 var(--sans); border-radius: 3px; padding: 14px 24px; cursor: pointer; transition: transform .15s, background .15s, box-shadow .15s; }
+  .primario { background: var(--tinta); color: var(--papel); border: 1px solid var(--tinta); box-shadow: 3px 3px 0 var(--verde); }
+  .primario:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--verde); }
+  .primario:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--verde); }
+  .primario:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
+  .secundario { background: transparent; color: var(--tinta-suave); border: 1px solid var(--renglon); }
+  .secundario:hover { color: var(--tinta); border-color: var(--tinta-suave); }
+  .pista { font-size: 13px; color: var(--tinta-suave); }
+  .error { margin: 16px 0 0; padding: 12px 14px; background: var(--lacre-claro); color: var(--lacre); border-left: 3px solid var(--lacre); font-weight: 500; }
+
+  /* ------------------------------------------------ resultado */
+  #panelResultado { animation: aparecer .5s ease both; }
+  .cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--tinta); }
+  .cifra { padding: 18px 16px 18px 0; border-bottom: 1px solid var(--renglon); animation: aparecer .5s ease both; }
+  .cifra + .cifra { padding-left: 16px; border-left: 1px solid var(--renglon); }
+  .cifra:nth-child(2) { animation-delay: .07s; } .cifra:nth-child(3) { animation-delay: .14s; } .cifra:nth-child(4) { animation-delay: .21s; }
+  .cifra .n { font: 400 54px/1 var(--serif); font-variation-settings: "opsz" 144; letter-spacing: -.03em; font-variant-numeric: lining-nums; }
+  .cifra .t { font: 600 12px/1.3 var(--sans); letter-spacing: .08em; text-transform: uppercase; margin-top: 10px; }
+  .cifra .d { font: 13px/1.4 var(--mono); color: var(--tinta-suave); margin-top: 4px; }
+  .cifra.ok .n, .cifra.ok .t { color: var(--verde); }
+  .cifra.rev .n, .cifra.rev .t { color: var(--ocre); }
+  .cifra.bad .n, .cifra.bad .t { color: var(--lacre); }
+
+  /* barras de proporción */
+  .barras { margin: 30px 0 8px; display: grid; gap: 14px; }
+  .barra-fila { display: grid; grid-template-columns: 110px minmax(0, 1fr) 150px; gap: 14px; align-items: center; }
+  .barra-fila .et { font: 500 13px var(--sans); }
+  .barra-fila .tot { font: 13px var(--mono); text-align: right; color: var(--tinta-suave); }
+  .barra { display: flex; height: 16px; background: var(--papel-2); border-radius: 2px; overflow: hidden; }
+  .barra span { display: block; height: 100%; transform-origin: left; animation: crecer .8s cubic-bezier(.3,.8,.2,1) both .25s; }
+  .barra span + span { box-shadow: inset 2px 0 0 var(--hoja); }
+  .b-ok { background: var(--verde); } .b-rev { background: var(--ocre); } .b-bad { background: var(--lacre); }
+  .leyenda { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--tinta-suave); margin-top: 4px; }
+  .leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 1px; margin-right: 6px; vertical-align: -1px; }
+  @keyframes crecer { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes aparecer { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .avisos { margin: 18px 0 0; padding: 12px 14px 12px 32px; background: var(--ocre-claro); color: var(--tinta); border-left: 3px solid var(--ocre); font-size: 14px; }
+  .avisos:empty { display: none; }
+
+  /* libro mayor */
+  .mayor { width: 100%; border-collapse: collapse; margin-top: 26px; background: var(--hoja);
+           background-image: linear-gradient(to right, transparent calc(100% - 172px), var(--renglon) calc(100% - 172px), var(--renglon) calc(100% - 171px), transparent calc(100% - 171px)); }
+  .mayor th { font: 600 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--tinta-suave);
+              text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--tinta); }
+  .mayor td { padding: 9px 14px; border-bottom: 1px solid var(--renglon); }
+  .mayor .num { text-align: right; font: 14px var(--mono); font-variant-numeric: tabular-nums; }
+  .mayor .grupo td { font: italic 400 15px var(--serif); color: var(--verde); padding-top: 16px; border-bottom-color: var(--tinta-suave); }
+  .mayor .col { font: 12px var(--mono); color: var(--tinta-suave); margin-left: 6px; }
+
+  .descarga { margin-top: 26px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .descarga .pista { font-family: var(--mono); }
+
+  /* ------------------------------------------------ regla y configuración */
+  details { border-top: 1px solid var(--tinta); border-bottom: 1px solid var(--tinta); }
+  summary { list-style: none; cursor: pointer; padding: 16px 0; display: flex; align-items: baseline; gap: 14px; }
+  summary::-webkit-details-marker { display: none; }
+  summary .num { font: italic 400 30px/1 var(--serif); color: var(--verde); min-width: 1.4em; }
+  summary h2 { font: 500 22px/1.2 var(--serif); margin: 0; }
+  summary .mas { margin-left: auto; font: 300 26px/1 var(--serif); transition: transform .25s; }
+  details[open] summary .mas { transform: rotate(45deg); }
+  .cuerpo { padding: 0 0 22px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; }
+  .regla p { margin: 0 0 12px; }
+  .regla .cita { font: italic 400 19px/1.4 var(--serif); padding-left: 16px; border-left: 3px solid var(--verde); margin-bottom: 14px; }
+  .cfg { display: grid; gap: 14px; align-content: start; }
+  .cfg label { display: grid; gap: 6px; font: 600 11px/1.3 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--tinta-suave); }
+  .cfg input { font: 14px var(--mono); padding: 10px 12px; color: var(--tinta); background: var(--hoja);
+               border: 1px solid var(--renglon); border-bottom: 2px solid var(--tinta-suave); border-radius: 2px; }
+  .cfg input:focus { outline: none; border-bottom-color: var(--verde); }
+  .cfg button { justify-self: start; padding: 10px 16px; font-size: 13px; }
+
+  footer { margin-top: 44px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+           font: 12px var(--mono); color: var(--tinta-suave); }
+
+  /* entrada escalonada */
+  .entra { animation: aparecer .6s ease both; }
+  .entra:nth-child(2) { animation-delay: .06s; } .entra:nth-child(3) { animation-delay: .12s; }
+  .entra:nth-child(4) { animation-delay: .18s; } .entra:nth-child(5) { animation-delay: .24s; }
+
   [hidden] { display: none !important; }
+
+  @media (max-width: 720px) {
+    main { padding-top: 32px; }
+    .bajada { grid-template-columns: 1fr; }
+    .fichas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ficha:nth-child(2) { border-right: 0; }
+    .ficha:nth-child(-n+2) { border-bottom: 1px solid var(--renglon); }
+    .cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cifra:nth-child(3) { border-left: 0; padding-left: 0; }
+    .cifra .n { font-size: 42px; }
+    .barra-fila { grid-template-columns: 1fr; gap: 6px; }
+    .barra-fila .tot { text-align: left; }
+    .cuerpo { grid-template-columns: 1fr; }
+    .mayor { background-image: none; }
+    .mayor th, .mayor td { padding-left: 8px; padding-right: 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>Conciliación de cobros con tarjeta</h1>
-  <p class="sub">Recibos de caja vs. Payway, QR Payway y Mercado Pago. Los archivos se procesan en tu computadora: no se suben a ningún lado.</p>
+  <div class="membrete entra"><span>Grupo Oroño · Tesorería</span><span id="hoy"></span></div>
 
-  <section class="panel">
-    <h2>1. Archivos del período</h2>
+  <h1 class="entra">Conciliación<br>de <em>cobros</em></h1>
+  <div class="bajada entra">
+    <p>Recibos de caja con tarjeta, QR y videoconsultas contra lo presentado en Payway, las transferencias QR y Mercado Pago.</p>
+    <span class="candado">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      Los archivos no salen de tu computadora
+    </span>
+  </div>
+
+  <!-- I. Archivos -->
+  <section class="seccion entra">
+    <div class="rotulo"><span class="num">I.</span><h2>Archivos del período</h2></div>
     <div id="zona" tabindex="0" role="button" aria-label="Elegir archivos">
-      Arrastrá acá los 4 archivos o <strong>hacé clic para elegirlos</strong>
-      <div class="regla" style="margin-top:6px">Listado de caja (.xls) · Movimientos Payway (.csv) · QR Payway (.csv) · Mercado Pago (.xlsx)</div>
+      <svg class="flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 3v13M6.5 10.5 12 16l5.5-5.5M4 20h16"/></svg>
+      <div class="grande">Soltá acá los cuatro archivos o <u>elegilos de la carpeta</u></div>
+      <div class="chico">Se reconocen solos por su contenido: el nombre y el orden no importan.</div>
     </div>
     <input id="entrada" type="file" multiple accept=".csv,.xls,.xlsx" hidden>
-    <ul class="lista" id="listaArchivos"></ul>
+
+    <div class="fichas" id="fichas"></div>
+    <ul class="ignorados" id="ignorados"></ul>
+
     <div class="acciones">
       <button class="primario" id="btnProcesar" disabled>Conciliar</button>
       <button class="secundario" id="btnLimpiar" hidden>Empezar de nuevo</button>
+      <span class="pista" id="pistaProcesar">Falta al menos el listado de caja.</span>
     </div>
     <p id="error" class="error" hidden></p>
   </section>
 
-  <section class="panel" id="panelResultado" hidden>
-    <h2>2. Resultado <span id="periodo" style="text-transform:none;letter-spacing:0"></span></h2>
-    <div class="kpis" id="kpis"></div>
+  <!-- II. Resultado -->
+  <section class="seccion" id="panelResultado" hidden>
+    <div class="rotulo"><span class="num">II.</span><h2>Resultado</h2><span class="extra" id="periodo"></span></div>
+
+    <div class="cifras" id="kpis"></div>
+
+    <div class="barras" id="barras"></div>
+    <div class="leyenda">
+      <span><i class="b-ok"></i>Conciliado</span>
+      <span><i class="b-rev"></i>Para revisar</span>
+      <span><i class="b-bad"></i>Sin contrapartida</span>
+    </div>
+
     <ul class="avisos" id="avisos"></ul>
-    <table id="tablaFuentes"></table>
-    <div class="acciones">
+
+    <table class="mayor" id="tablaFuentes"></table>
+
+    <div class="descarga">
       <button class="primario" id="btnDescargar">Descargar Excel</button>
+      <span class="pista" id="nombreSalida"></span>
     </div>
   </section>
 
-  <section class="panel">
+  <!-- III. Regla -->
+  <section class="seccion entra">
     <details>
-      <summary>Cómo concilia y configuración</summary>
-      <p class="regla">Un recibo se da por conciliado solo si tiene la <b>misma fecha</b> y el <b>mismo importe exacto</b>
-        que un movimiento, y esa combinación es <b>única de los dos lados</b> (un solo recibo y un solo movimiento).
-        Las columnas "solo MP" (videoconsultas) se cruzan únicamente contra Mercado Pago.
-        No hay desempates, tolerancias ni ventanas de días: si hay más de un candidato, va a <b>Para revisar</b>;
-        si no hay ninguno, queda como pendiente.</p>
-      <div class="cfg">
-        <label>Columnas de tarjeta / QR del listado de caja (separadas por coma)
-          <input id="cfgTarjeta" autocomplete="off"></label>
-        <label>Columnas que se cobran solo por Mercado Pago
-          <input id="cfgMP" autocomplete="off"></label>
+      <summary><span class="num">III.</span><h2>Cómo concilia</h2><span class="mas">+</span></summary>
+      <div class="cuerpo">
+        <div class="regla">
+          <p class="cita">Misma fecha, mismo importe exacto, y que sea único de los dos lados.</p>
+          <p>Un recibo se da por conciliado solo si hay <b>un único</b> movimiento con su fecha e importe, y ese movimiento no coincide con ningún otro recibo.</p>
+          <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago.</p>
+          <p>No hay desempates, tolerancias ni ventanas de días. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
+        </div>
+        <div class="cfg">
+          <label>Columnas de tarjeta / QR
+            <input id="cfgTarjeta" autocomplete="off" spellcheck="false"></label>
+          <label>Columnas solo Mercado Pago
+            <input id="cfgMP" autocomplete="off" spellcheck="false"></label>
+          <button class="secundario" id="btnCfgDefault">Volver a los valores originales</button>
+        </div>
       </div>
-      <div class="acciones"><button class="secundario" id="btnCfgDefault">Volver a valores originales</button></div>
     </details>
   </section>
 
-  <footer>Grupo Oroño · Conciliación de cobros · <span id="version">v1</span></footer>
+  <footer><span>Conciliación de cobros · v2</span><span>Procesamiento local en el navegador</span></footer>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=1"></script>
+<script src="conciliar.js?v=2"></script>
 <script>
 (function () {
   "use strict";
@@ -119,6 +298,9 @@
   const fmt = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
   const plata = (c) => fmt.format(Conciliador.pesos(c));
   const fecha = (iso) => iso.split("-").reverse().join("/");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  $("hoy").textContent = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
 
   // ---------- configuración (guardada en este navegador)
   const CLAVE_CFG = "conciliacion-cobros-cfg";
@@ -160,42 +342,45 @@
     pintarLista();
   }
 
-  const TIPOS = { recibos: "Listado de caja", payway: "Payway", qr: "QR Payway", mp: "Mercado Pago" };
+  const TIPOS = {
+    recibos: { nombre: "Listado de caja", ext: ".xls" },
+    payway: { nombre: "Payway", ext: ".csv · presentados" },
+    qr: { nombre: "QR Payway", ext: ".csv · transferencias" },
+    mp: { nombre: "Mercado Pago", ext: ".xlsx" },
+  };
   function pintarLista() {
-    const ul = $("listaArchivos");
-    ul.innerHTML = "";
-    const vistos = new Set();
+    const porTipo = {};
+    const ignorados = [];
     for (const a of archivos.values()) {
       let tipo = null;
-      try { tipo = detectarTipo(a); } catch (e) { tipo = null; }
-      if (tipo) vistos.add(tipo);
-      const li = document.createElement("li");
-      li.innerHTML = `<span class="nombre"></span><span class="tag${tipo ? "" : " falta"}"></span>`;
-      li.firstChild.textContent = a.nombre;
-      li.lastChild.textContent = tipo ? TIPOS[tipo] : "No reconocido";
-      ul.appendChild(li);
+      try { tipo = Conciliador.detectar(a.nombre, a.bytes); } catch (e) { tipo = null; }
+      if (tipo) (porTipo[tipo] = porTipo[tipo] || []).push(a.nombre);
+      else ignorados.push(a.nombre);
     }
-    for (const t of Object.keys(TIPOS)) {
-      if (!vistos.has(t)) {
-        const li = document.createElement("li");
-        li.innerHTML = `<span class="nombre regla">Falta: ${TIPOS[t]}</span><span class="tag falta">pendiente</span>`;
-        ul.appendChild(li);
-      }
-    }
-    $("btnProcesar").disabled = !vistos.has("recibos");
+    $("fichas").innerHTML = Object.entries(TIPOS).map(([t, info]) => {
+      const nombres = porTipo[t];
+      return `<div class="ficha ${nombres ? "ok" : "falta"}">
+        <div class="sello">Recibido</div>
+        <div class="tipo">${info.nombre}</div>
+        <div class="ext">${info.ext}</div>
+        <div class="arch">${nombres ? nombres.map(esc).join("<br>") : "pendiente"}</div>
+      </div>`;
+    }).join("");
+    $("ignorados").innerHTML = ignorados.map((n) => `<li>${esc(n)}: no se reconoce el formato, se va a ignorar</li>`).join("");
+
+    const faltan = Object.keys(TIPOS).filter((t) => !porTipo[t]);
+    $("btnProcesar").disabled = !porTipo.recibos;
+    $("pistaProcesar").textContent = !porTipo.recibos
+      ? "Falta al menos el listado de caja."
+      : faltan.length ? `Se puede conciliar, pero falta: ${faltan.map((t) => TIPOS[t].nombre).join(", ")}.` : "Todo listo.";
     $("btnLimpiar").hidden = archivos.size === 0;
   }
-
-  function detectarTipo(a) {
-    return Conciliador.detectar(a.nombre, a.bytes);
-  }
+  pintarLista();
 
   $("btnLimpiar").addEventListener("click", () => {
     archivos.clear();
     ocultarResultado();
     pintarLista();
-    $("listaArchivos").innerHTML = "";
-    $("btnLimpiar").hidden = true;
   });
 
   function ocultarResultado() {
@@ -209,7 +394,7 @@
     $("error").hidden = true;
     const cfg = cfgActual();
     if (!cfg.colsTarjeta.length && !cfg.colsSoloMP.length) {
-      return mostrarError("Configurá al menos una columna del listado de caja.");
+      return mostrarError("Configurá al menos una columna del listado de caja (sección III).");
     }
     try {
       ultimo = Conciliador.procesar([...archivos.values()], cfg);
@@ -225,33 +410,48 @@
     $("error").hidden = false;
   }
 
-  function kpi(clase, n, titulo, detalle) {
-    return `<div class="kpi ${clase}"><div class="n">${n}</div><div><b>${titulo}</b></div><div class="d">${detalle}</div></div>`;
+  function cifra(clase, n, titulo, detalle) {
+    return `<div class="cifra ${clase}"><div class="n">${n}</div><div class="t">${titulo}</div><div class="d">${detalle}</div></div>`;
+  }
+
+  function barra(etiqueta, partes, total) {
+    const spans = partes.filter((p) => p[1] > 0)
+      .map((p) => `<span class="${p[0]}" style="width:${(100 * p[1] / total).toFixed(3)}%" title="${plata(p[1])}"></span>`).join("");
+    return `<div class="barra-fila"><span class="et">${etiqueta}</span><div class="barra">${spans}</div><span class="tot">${plata(total)}</span></div>`;
   }
 
   function pintarResultado(r) {
     const R = r.resultado;
-    $("periodo").textContent = `· ${fecha(R.desde)} al ${fecha(R.hasta)}`;
+    $("periodo").textContent = `${fecha(R.desde)} — ${fecha(R.hasta)}`;
     $("kpis").innerHTML =
-      kpi("ok", R.conciliado.rec, "Conciliados", plata(R.conciliado.importe)) +
-      kpi("rev", R.revisar.rec, "Para revisar", `${plata(R.revisar.importe)} · ${R.revisar.mov} movimientos`) +
-      kpi("bad", R.recSinMov.cant, "Recibos sin movimiento", plata(R.recSinMov.importe)) +
-      kpi("bad", R.movSinRec.cant, "Movimientos sin recibo", plata(R.movSinRec.importe));
+      cifra("ok", R.conciliado.rec, "Conciliados", plata(R.conciliado.importe)) +
+      cifra("rev", R.revisar.rec, "Para revisar", `${plata(R.revisar.importe)}<br>${R.revisar.mov} movimientos`) +
+      cifra("bad", R.recSinMov.cant, "Recibos sin movimiento", plata(R.recSinMov.importe)) +
+      cifra("bad", R.movSinRec.cant, "Movimientos sin recibo", plata(R.movSinRec.importe));
 
-    const av = $("avisos");
-    av.innerHTML = "";
-    r.avisos.forEach((a) => { const li = document.createElement("li"); li.textContent = a; av.appendChild(li); });
+    $("barras").innerHTML =
+      barra("Recibos", [["b-ok", R.conciliado.importe], ["b-rev", R.revisar.importe], ["b-bad", R.recSinMov.importe]], R.totRecibos.importe) +
+      barra("Movimientos", [["b-ok", R.conciliado.importe], ["b-rev", R.revisar.importeMov], ["b-bad", R.movSinRec.importe]], R.totMovs.importe);
 
-    const filas = [
-      ...R.recibosPorColumna.map((x) => ["Recibos " + x.columna, x.cant, x.importe]),
-      ...R.movsPorFuente.map((x) => ["Movimientos " + x.fuente, x.cant, x.importe]),
-    ];
+    $("avisos").innerHTML = r.avisos.map((a) => `<li>${esc(a)}</li>`).join("");
+
+    const fila = (et, col, cant, imp) =>
+      `<tr><td>${et}${col ? `<span class="col">${col}</span>` : ""}</td><td class="num">${cant}</td><td class="num">${plata(imp)}</td></tr>`;
+    const nombresFuente = { PAYWAY: "Payway presentados", QR: "QR Payway", MP: "Mercado Pago" };
     $("tablaFuentes").innerHTML =
-      `<thead><tr><th>Origen</th><th class="num">Cantidad</th><th class="num">Importe</th></tr></thead><tbody>` +
-      filas.map((f) => `<tr><td>${f[0]}</td><td class="num">${f[1]}</td><td class="num">${plata(f[2])}</td></tr>`).join("") +
+      `<thead><tr><th>Origen</th><th class="num">Cant.</th><th class="num">Importe</th></tr></thead><tbody>` +
+      `<tr class="grupo"><td colspan="3">Recibos de caja</td></tr>` +
+      R.recibosPorColumna.map((x) => fila("Columna", x.columna, x.cant, x.importe)).join("") +
+      `<tr class="grupo"><td colspan="3">Movimientos</td></tr>` +
+      R.movsPorFuente.map((x) => fila(nombresFuente[x.fuente] || x.fuente, "", x.cant, x.importe)).join("") +
       `</tbody>`;
-    $("panelResultado").hidden = false;
-    $("panelResultado").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("nombreSalida").textContent = r.nombreSalida;
+
+    const panel = $("panelResultado");
+    panel.hidden = true;
+    void panel.offsetWidth; // reinicia las animaciones
+    panel.hidden = false;
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   $("btnDescargar").addEventListener("click", () => {

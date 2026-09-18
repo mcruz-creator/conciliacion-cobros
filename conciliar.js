@@ -267,7 +267,7 @@
       conciliado: { rec: est(recibos, "Conciliado").length, mov: est(movs, "Conciliado").length,
                     importe: suma(est(recibos, "Conciliado")) },
       revisar: { rec: est(recibos, "Para revisar").length, mov: est(movs, "Para revisar").length,
-                 importe: suma(est(recibos, "Para revisar")) },
+                 importe: suma(est(recibos, "Para revisar")), importeMov: suma(est(movs, "Para revisar")) },
       recSinMov: { cant: est(recibos, "Sin movimiento").length, importe: suma(est(recibos, "Sin movimiento")) },
       movSinRec: { cant: est(movs, "Sin recibo").length, importe: suma(est(movs, "Sin recibo")) },
     };
