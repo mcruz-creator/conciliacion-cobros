@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conciliación de cobros</title>
+<style>
+  :root {
+    --bg: #f5f7fa; --panel: #ffffff; --text: #1d2733; --muted: #5f6b7a; --line: #dde3ea;
+    --accent: #1f4e78; --accent-soft: #e6eef6; --ok: #1e7b45; --warn: #a15c00; --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12171d; --panel: #1b222b; --text: #e6ebf0; --muted: #9aa6b2; --line: #2c3642;
+      --accent: #7fb2e5; --accent-soft: #1f2d3c; --ok: #5cc98a; --warn: #e0a64a; --bad: #f08a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  #zona { border: 2px dashed var(--line); border-radius: 10px; padding: 32px 16px; text-align: center; cursor: pointer; transition: .15s; }
+  #zona.encima, #zona:hover { border-color: var(--accent); background: var(--accent-soft); }
+  #zona strong { color: var(--accent); }
+  .lista { list-style: none; padding: 0; margin: 12px 0 0; }
+  .lista li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .lista li:last-child { border-bottom: 0; }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+  .tag.falta { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+  .nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer; }
+  .primario { background: var(--accent); color: var(--panel); font-weight: 600; }
+  .primario:disabled { opacity: .45; cursor: not-allowed; }
+  .secundario { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .avisos { color: var(--warn); margin: 12px 0 0; padding-left: 18px; }
+  .error { color: var(--bad); font-weight: 600; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .kpi { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .kpi .n { font-size: 26px; font-weight: 700; }
+  .kpi .d { color: var(--muted); font-size: 13px; }
+  .kpi.ok .n { color: var(--ok); } .kpi.rev .n { color: var(--warn); } .kpi.bad .n { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td.num, th.num { text-align: right; }
+  details summary { cursor: pointer; color: var(--muted); }
+  .cfg { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
+  .cfg label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .cfg input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  .regla { font-size: 13px; color: var(--muted); }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Conciliación de cobros con tarjeta</h1>
+  <p class="sub">Recibos de caja vs. Payway, QR Payway y Mercado Pago. Los archivos se procesan en tu computadora: no se suben a ningún lado.</p>
+
+  <section class="panel">
+    <h2>1. Archivos del período</h2>
+    <div id="zona" tabindex="0" role="button" aria-label="Elegir archivos">
+      Arrastrá acá los 4 archivos o <strong>hacé clic para elegirlos</strong>
+      <div class="regla" style="margin-top:6px">Listado de caja (.xls) · Movimientos Payway (.csv) · QR Payway (.csv) · Mercado Pago (.xlsx)</div>
+    </div>
+    <input id="entrada" type="file" multiple accept=".csv,.xls,.xlsx" hidden>
+    <ul class="lista" id="listaArchivos"></ul>
+    <div class="acciones">
+      <button class="primario" id="btnProcesar" disabled>Conciliar</button>
+      <button class="secundario" id="btnLimpiar" hidden>Empezar de nuevo</button>
+    </div>
+    <p id="error" class="error" hidden></p>
+  </section>
+
+  <section class="panel" id="panelResultado" hidden>
+    <h2>2. Resultado <span id="periodo" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div class="kpis" id="kpis"></div>
+    <ul class="avisos" id="avisos"></ul>
+    <table id="tablaFuentes"></table>
+    <div class="acciones">
+      <button class="primario" id="btnDescargar">Descargar Excel</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>Cómo concilia y configuración</summary>
+      <p class="regla">Un recibo se da por conciliado solo si tiene la <b>misma fecha</b> y el <b>mismo importe exacto</b>
+        que un movimiento, y esa combinación es <b>única de los dos lados</b> (un solo recibo y un solo movimiento).
+        Las columnas "solo MP" (videoconsultas) se cruzan únicamente contra Mercado Pago.
+        No hay desempates, tolerancias ni ventanas de días: si hay más de un candidato, va a <b>Para revisar</b>;
+        si no hay ninguno, queda como pendiente.</p>
+      <div class="cfg">
+        <label>Columnas de tarjeta / QR del listado de caja (separadas por coma)
+          <input id="cfgTarjeta" autocomplete="off"></label>
+        <label>Columnas que se cobran solo por Mercado Pago
+          <input id="cfgMP" autocomplete="off"></label>
+      </div>
+      <div class="acciones"><button class="secundario" id="btnCfgDefault">Volver a valores originales</button></div>
+    </details>
+  </section>
+
+  <footer>Grupo Oroño · Conciliación de cobros · <span id="version">v1</span></footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="conciliar.js?v=1"></script>
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const archivos = new Map(); // nombre -> {nombre, bytes}
+  let ultimo = null;
+
+  const fmt = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
+  const plata = (c) => fmt.format(Conciliador.pesos(c));
+  const fecha = (iso) => iso.split("-").reverse().join("/");
+
+  // ---------- configuración (guardada en este navegador)
+  const CLAVE_CFG = "conciliacion-cobros-cfg";
+  function leerCfgGuardada() {
+    try { return JSON.parse(localStorage.getItem(CLAVE_CFG)) || null; } catch (e) { return null; }
+  }
+  function guardarCfg(cfg) {
+    try { localStorage.setItem(CLAVE_CFG, JSON.stringify(cfg)); } catch (e) { /* sin almacenamiento: no pasa nada */ }
+  }
+  function mostrarCfg(cfg) {
+    $("cfgTarjeta").value = cfg.colsTarjeta.join(", ");
+    $("cfgMP").value = cfg.colsSoloMP.join(", ");
+  }
+  const lista = (s) => s.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
+  function cfgActual() {
+    return { colsTarjeta: lista($("cfgTarjeta").value), colsSoloMP: lista($("cfgMP").value) };
+  }
+  mostrarCfg(leerCfgGuardada() || Conciliador.CONFIG_DEFAULT);
+  ["cfgTarjeta", "cfgMP"].forEach((id) => $(id).addEventListener("change", () => guardarCfg(cfgActual())));
+  $("btnCfgDefault").addEventListener("click", () => {
+    mostrarCfg(Conciliador.CONFIG_DEFAULT);
+    guardarCfg(Conciliador.CONFIG_DEFAULT);
+  });
+
+  // ---------- carga de archivos
+  const zona = $("zona");
+  zona.addEventListener("click", () => $("entrada").click());
+  zona.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("entrada").click(); } });
+  zona.addEventListener("dragover", (e) => { e.preventDefault(); zona.classList.add("encima"); });
+  zona.addEventListener("dragleave", () => zona.classList.remove("encima"));
+  zona.addEventListener("drop", (e) => { e.preventDefault(); zona.classList.remove("encima"); agregar(e.dataTransfer.files); });
+  $("entrada").addEventListener("change", (e) => { agregar(e.target.files); e.target.value = ""; });
+
+  async function agregar(files) {
+    for (const f of files) {
+      archivos.set(f.name, { nombre: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
+    }
+    ocultarResultado();
+    pintarLista();
+  }
+
+  const TIPOS = { recibos: "Listado de caja", payway: "Payway", qr: "QR Payway", mp: "Mercado Pago" };
+  function pintarLista() {
+    const ul = $("listaArchivos");
+    ul.innerHTML = "";
+    const vistos = new Set();
+    for (const a of archivos.values()) {
+      let tipo = null;
+      try { tipo = detectarTipo(a); } catch (e) { tipo = null; }
+      if (tipo) vistos.add(tipo);
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="nombre"></span><span class="tag${tipo ? "" : " falta"}"></span>`;
+      li.firstChild.textContent = a.nombre;
+      li.lastChild.textContent = tipo ? TIPOS[tipo] : "No reconocido";
+      ul.appendChild(li);
+    }
+    for (const t of Object.keys(TIPOS)) {
+      if (!vistos.has(t)) {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="nombre regla">Falta: ${TIPOS[t]}</span><span class="tag falta">pendiente</span>`;
+        ul.appendChild(li);
+      }
+    }
+    $("btnProcesar").disabled = !vistos.has("recibos");
+    $("btnLimpiar").hidden = archivos.size === 0;
+  }
+
+  function detectarTipo(a) {
+    return Conciliador.detectar(a.nombre, a.bytes);
+  }
+
+  $("btnLimpiar").addEventListener("click", () => {
+    archivos.clear();
+    ocultarResultado();
+    pintarLista();
+    $("listaArchivos").innerHTML = "";
+    $("btnLimpiar").hidden = true;
+  });
+
+  function ocultarResultado() {
+    $("panelResultado").hidden = true;
+    $("error").hidden = true;
+    ultimo = null;
+  }
+
+  // ---------- proceso
+  $("btnProcesar").addEventListener("click", () => {
+    $("error").hidden = true;
+    const cfg = cfgActual();
+    if (!cfg.colsTarjeta.length && !cfg.colsSoloMP.length) {
+      return mostrarError("Configurá al menos una columna del listado de caja.");
+    }
+    try {
+      ultimo = Conciliador.procesar([...archivos.values()], cfg);
+      pintarResultado(ultimo);
+    } catch (e) {
+      console.error(e);
+      mostrarError(e.message || String(e));
+    }
+  });
+
+  function mostrarError(msg) {
+    $("error").textContent = msg;
+    $("error").hidden = false;
+  }
+
+  function kpi(clase, n, titulo, detalle) {
+    return `<div class="kpi ${clase}"><div class="n">${n}</div><div><b>${titulo}</b></div><div class="d">${detalle}</div></div>`;
+  }
+
+  function pintarResultado(r) {
+    const R = r.resultado;
+    $("periodo").textContent = `· ${fecha(R.desde)} al ${fecha(R.hasta)}`;
+    $("kpis").innerHTML =
+      kpi("ok", R.conciliado.rec, "Conciliados", plata(R.conciliado.importe)) +
+      kpi("rev", R.revisar.rec, "Para revisar", `${plata(R.revisar.importe)} · ${R.revisar.mov} movimientos`) +
+      kpi("bad", R.recSinMov.cant, "Recibos sin movimiento", plata(R.recSinMov.importe)) +
+      kpi("bad", R.movSinRec.cant, "Movimientos sin recibo", plata(R.movSinRec.importe));
+
+    const av = $("avisos");
+    av.innerHTML = "";
+    r.avisos.forEach((a) => { const li = document.createElement("li"); li.textContent = a; av.appendChild(li); });
+
+    const filas = [
+      ...R.recibosPorColumna.map((x) => ["Recibos " + x.columna, x.cant, x.importe]),
+      ...R.movsPorFuente.map((x) => ["Movimientos " + x.fuente, x.cant, x.importe]),
+    ];
+    $("tablaFuentes").innerHTML =
+      `<thead><tr><th>Origen</th><th class="num">Cantidad</th><th class="num">Importe</th></tr></thead><tbody>` +
+      filas.map((f) => `<tr><td>${f[0]}</td><td class="num">${f[1]}</td><td class="num">${plata(f[2])}</td></tr>`).join("") +
+      `</tbody>`;
+    $("panelResultado").hidden = false;
+    $("panelResultado").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  $("btnDescargar").addEventListener("click", () => {
+    if (ultimo) XLSX.writeFile(ultimo.libro, ultimo.nombreSalida);
+  });
+})();
+</script>
+</body>
+</html>

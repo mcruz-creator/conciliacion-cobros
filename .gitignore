@@ -1,0 +1,7 @@
+# Lista blanca: solo se publica el código. NUNCA datos (recibos, movimientos, pacientes).
+*
+!.gitignore
+!index.html
+!conciliar.js
+!conciliar.py
+!README.md
