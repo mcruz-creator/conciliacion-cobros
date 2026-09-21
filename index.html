@@ -438,7 +438,9 @@
   $("entrada").addEventListener("change", (e) => { agregar(e.target.files); e.target.value = ""; });
 
   async function agregar(files) {
-    for (const f of files) {
+    // copia inmediata: el input se vacia apenas arranca esto y la lista original queda en cero
+    const lista = Array.from(files);
+    for (const f of lista) {
       archivos.set(f.name, { nombre: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
     }
     ocultarResultado();
