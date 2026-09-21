@@ -268,11 +268,12 @@
       <summary><span class="num">III.</span><h2>Cómo concilia</h2><span class="mas">+</span></summary>
       <div class="cuerpo">
         <div class="regla">
-          <p class="cita">Misma fecha. Concilia cuando la correspondencia es unívoca: de a uno, de a grupo, o con una diferencia de centavos. Las anulaciones internas se netean entre sí.</p>
+          <p class="cita">Misma fecha. Concilia cuando la correspondencia es unívoca: de a uno, de a grupo, o con una diferencia de centavos. Las anulaciones internas se netean entre sí y lo que paga la empresa se aparta.</p>
           <p><b>1. Par directo.</b> Hay <b>un único</b> movimiento con la fecha e importe del recibo, y ese movimiento no coincide con ningún otro recibo.</p>
           <p><b>2. Grupo que cierra.</b> Dentro de una misma fecha e importe, la cantidad de recibos es <b>exactamente igual</b> a la de movimientos: el grupo cierra, no sobra ni falta nada, y se concilia en bloque. El apareo dentro del grupo va por orden de carga; lo verificado es el total del grupo, no el par uno por uno. La columna <b>Apareo</b> del Excel dice de cuál de las tres primeras reglas salió cada fila.</p>
           <p><b>3. Diferencia de centavos.</b> Sobre lo que quedó sin conciliar por las dos anteriores: misma fecha y una diferencia de importe de <b>hasta $0,99</b> en cualquier dirección, siempre que haya <b>un solo</b> movimiento dentro de ese margen y ese movimiento no le sirva a ningún otro recibo. Es el caso del QR, que redondea al peso entero. El Excel muestra el importe del movimiento y la diferencia en cada fila.</p>
           <p><b>4. Neteo de anulaciones.</b> Al final, entre los recibos que quedaron <b>sin conciliar</b>: si el mismo día y para el mismo cliente hay uno positivo y uno negativo del mismo importe, se cancelan entre sí y salen del informe, porque esa anulación nunca llegó al procesador. Después se vuelven a correr las tres reglas anteriores sobre lo que quedó. Un recibo negativo que ya concilió contra una devolución real (Payway «Devolución», QR «Devuelto», MP «Devolución de dinero») <b>no</b> se netea nunca. Los pares anulados quedan listados en la hoja <b>Anulados</b> del Excel; el total de recibos del período no cambia, porque cada par suma cero.</p>
+          <p><b>5. Pagador Grupo Oroño.</b> Antes de conciliar se apartan los movimientos cuyo campo <b>Pagador</b> es Grupo Oroño: los hace la empresa, no salen de un recibo de caja. Se miran solo los caracteres que siguen a «Pagador:»; el texto «Producto de Grupooroño», que aparece en cobros de pacientes reales, <b>no</b> excluye nada. Van a la hoja <b>Pagador Grupo Oroño</b> del Excel y al renglón del Resumen, y no cuentan en el total de movimientos.</p>
           <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago en las tres primeras reglas, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
           <p>No hay desempates ni ventanas de días, y la diferencia de importe no puede pasar de $0,99. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
         </div>
@@ -287,11 +288,11 @@
     </details>
   </section>
 
-  <footer><span>Conciliación de cobros · v5</span><span>Procesamiento local en el navegador</span></footer>
+  <footer><span>Conciliación de cobros · v6</span><span>Procesamiento local en el navegador</span></footer>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=5"></script>
+<script src="conciliar.js?v=6"></script>
 <script>
 (function () {
   "use strict";
@@ -438,6 +439,9 @@
       barra("Movimientos", [["b-ok", R.conciliado.importeMov], ["b-rev", R.revisar.importeMov], ["b-bad", R.movSinRec.importe]], R.totMovs.importe) +
       (R.anulados.rec
         ? `<div class="barra-fila"><span class="et"></span><div class="nota-neteo">Además se netearon ${R.anulados.rec} recibos en ${R.anulados.pares} pares anulados (regla 4). Suman cero: no cambian el total del período. Están en la hoja <b>Anulados</b> del Excel.</div></div>`
+        : "") +
+      (R.pagadorPropio.cant
+        ? `<div class="barra-fila"><span class="et"></span><div class="nota-neteo">${R.pagadorPropio.cant === 1 ? "Se apartó 1 movimiento" : `Se apartaron ${R.pagadorPropio.cant} movimientos`} con pagador Grupo Oroño por ${plata(R.pagadorPropio.importe)} (regla 5). Los hace la empresa: no tienen recibo y quedan fuera del total de movimientos.</div></div>`
         : "");
 
     $("avisos").innerHTML = r.avisos.map((a) => `<li>${esc(a)}</li>`).join("");

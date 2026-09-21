@@ -18,6 +18,10 @@
  *      y salen del informe (la anulación nunca llegó al procesador). Después se
  *      vuelven a correr las reglas 1 a 3 sobre lo que quedó. Los recibos negativos
  *      que YA conciliaron contra una devolución real no se netean nunca.
+ *   5. Pagador propio: los movimientos cuyo campo "Pagador:" es Grupo Oroño los
+ *      hace la empresa, no salen de un recibo de caja. Se apartan ANTES de
+ *      conciliar y se informan aparte. Solo se mira el pagador: "Producto de
+ *      Grupooroño" aparece en cobros de pacientes reales y NO los excluye.
  *   En las tres primeras, las columnas "solo MP" (videoconsultas) solo se cruzan contra
  *   Mercado Pago; un grupo que empata en cantidad pero no tiene suficientes
  *   movimientos de MP para sus videoconsultas NO cierra. Todo lo demás queda
@@ -35,11 +39,22 @@
     colsSoloMP: ["TVIR"], // naranja: videoconsultas, solo Mercado Pago
   };
 
+  const PAGADOR_PROPIO = "orono"; // regla 5: sin acentos ni mayúsculas
+
   const MODO_PAR = "Par directo";
   const MODO_TOL = "Diferencia hasta $0,99";
   const TOLERANCIA = 99; // centavos
 
   // ------------------------------------------------------------ utilidades
+  const sinAcentos = (s) => String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+  /** regla 5: ¿el movimiento lo pagó la propia empresa? Solo mira el campo "Pagador:". */
+  function pagadorPropio(m) {
+    const d = sinAcentos(m.detalle);
+    const i = d.indexOf("pagador:");
+    return i >= 0 && d.slice(i + "pagador:".length).includes(PAGADOR_PROPIO);
+  }
+
   const cents = (v) => Math.round(Number(v) * 100);
   const pesos = (c) => c / 100;
 
@@ -330,6 +345,10 @@
     recibos = dedup(recibos, (r) => [r.nroRecibo, r.columna, r.importe, r.fecha].join("|"));
     movs = dedup(movs, (m) => [m.fuente, m.referencia, m.importe, m.fecha].join("|"));
 
+    // regla 5: los movimientos pagados por la propia empresa no se concilian
+    const propios = movs.filter(pagadorPropio);
+    movs = movs.filter((m) => !pagadorPropio(m));
+
     let pares = conciliar(recibos, movs, cfg);
     const anulados = netear(recibos);
     if (anulados.length) {
@@ -341,8 +360,8 @@
     const desde = fechas[0];
     const hasta = fechas[fechas.length - 1];
 
-    const resultado = resumir(recibos, movs, cfg, desde, hasta, anulados);
-    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg, anulados);
+    const resultado = resumir(recibos, movs, cfg, desde, hasta, anulados, propios);
+    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg, anulados, propios);
     return { resultado, avisos, leidos, libro, nombreSalida: `Conciliacion_${desde}_${hasta}.xlsx` };
   }
 
@@ -364,7 +383,7 @@
     return arr.reduce((s, x) => s + x.importe, 0);
   }
 
-  function resumir(recibos, movs, cfg, desde, hasta, anulados) {
+  function resumir(recibos, movs, cfg, desde, hasta, anulados, propios) {
     const est = (arr, e) => arr.filter((x) => x.estado === e);
     const porModo = (f) => {
       const g = est(recibos, "Conciliado").filter(f);
@@ -393,6 +412,7 @@
                  importe: suma(est(recibos, "Para revisar")), importeMov: suma(est(movs, "Para revisar")) },
       recSinMov: { cant: est(recibos, "Sin movimiento").length, importe: suma(est(recibos, "Sin movimiento")) },
       movSinRec: { cant: est(movs, "Sin recibo").length, importe: suma(est(movs, "Sin recibo")) },
+      pagadorPropio: { cant: (propios || []).length, importe: suma(propios || []) },
       anulados: { rec: (anulados || []).length * 2, pares: (anulados || []).length,
                   importe: (anulados || []).reduce((s, p) => s + p[0].importe, 0) },
     };
@@ -438,7 +458,7 @@
     return ws;
   }
 
-  function armarLibro(recibos, movs, pares, R, leidos, cfg, anulados) {
+  function armarLibro(recibos, movs, pares, R, leidos, cfg, anulados, propios) {
     const wb = XLSX.utils.book_new();
     const f = (x) => fechaExcel(x);
 
@@ -450,6 +470,7 @@
       ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos"],
       ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados"],
       ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe"],
+      ["Regla 5", "Pagador Grupo Oroño: los movimientos que paga la empresa se apartan antes de conciliar"],
       ["", `En las tres primeras, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
       [],
       ["RECIBOS", "Líneas", "Importe"],
@@ -469,6 +490,7 @@
       ["Recibos sin movimiento", R.recSinMov.cant, pesos(R.recSinMov.importe), ""],
       ["Movimientos sin recibo", "", pesos(R.movSinRec.importe), R.movSinRec.cant],
       ["Anulados y neteados (regla 4)", R.anulados.rec, 0, ""],
+      ["Pagador Grupo Oroño (estos no tienen recibo)", "", pesos(R.pagadorPropio.importe), R.pagadorPropio.cant],
       [],
       ["ARCHIVOS LEÍDOS"],
       ...leidos.map((l) => [nombreTipo(l.tipo), l.nombre]),
@@ -503,6 +525,17 @@
       ["Par", "Fecha", "Cliente", "Importe", "Recibo", "Cajero", "Columna", "Tipo Asiento",
        "Recibo anulación", "Cajero", "Columna", "Tipo Asiento", "Importe anulación"], anu,
       { importes: [3, 12], fechas: [1], relleno: (r) => r % 2 === 0 }), "Anulados");
+
+    // Regla 5: movimientos pagados por la propia empresa
+    if ((propios || []).length) {
+      const pr = propios
+        .slice()
+        .sort((a, b) => (a.fuente + a.fecha).localeCompare(b.fuente + b.fecha))
+        .map((x) => [x.fuente, f(x.fecha), pesos(x.importe), x.referencia, x.detalle, x.terminal]);
+      XLSX.utils.book_append_sheet(wb, hoja(
+        ["Fuente", "Fecha", "Importe", "Referencia", "Detalle", "Terminal / Caja"], pr,
+        { importes: [2], fechas: [1] }), "Pagador Grupo Oroño");
+    }
 
     // Para revisar: agrupado por fecha + importe
     const rr = recibos.filter((x) => x.estado === "Para revisar");

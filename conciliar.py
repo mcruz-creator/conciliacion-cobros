@@ -22,6 +22,10 @@ Reglas de conciliación (sin desempates ni tolerancias):
      y salen del informe (la anulación nunca llegó al procesador). Después se
      vuelven a correr las reglas 1 a 3 sobre lo que quedó. Los recibos negativos
      que YA conciliaron contra una devolución real no se netean nunca.
+  5. Pagador propio: los movimientos cuyo campo "Pagador:" es Grupo Oroño los hace
+     la empresa, no salen de un recibo de caja. Se apartan ANTES de conciliar y se
+     informan aparte. Solo se mira el pagador: "Producto de Grupooroño" aparece en
+     cobros de pacientes reales y NO los excluye.
   En las tres primeras, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
   grupo que empata en cantidad pero no tiene movimientos de MP suficientes para
   sus videoconsultas NO cierra. Todo lo demás queda para revisión manual.
@@ -30,6 +34,7 @@ Uso: dejar los archivos en la carpeta "Entrada" y ejecutar. El resultado queda
 en "Salida/Conciliacion_<desde>_<hasta>.xlsx".
 """
 import sys
+import unicodedata
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +49,7 @@ warnings.filterwarnings("ignore")
 COLS_TARJETA = ["TSNS", "TSNI", "TSNZ"]  # amarillas: cobros con tarjeta / QR
 COLS_MP = ["TVIR"]  # naranja: videoconsultas, solo Mercado Pago
 TOLERANCIA = 0.99  # regla 3: diferencia máxima de importe, en pesos
+PAGADOR_PROPIO = "orono"  # regla 5: sin acentos ni mayúsculas
 
 if getattr(sys, "frozen", False):
     BASE = Path(sys.executable).parent
@@ -242,6 +248,17 @@ def conciliar(rec, ext):
     return rec, ext, unicos
 
 
+def sin_acentos(s):
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
+
+
+def pagador_propio(detalle):
+    """Regla 5: ¿el movimiento lo pagó la propia empresa? Solo mira el campo "Pagador:"."""
+    d = sin_acentos(detalle)
+    i = d.find("pagador:")
+    return i >= 0 and PAGADOR_PROPIO in d[i + len("pagador:"):]
+
+
 def netear(rec):
     """
     Regla 4: entre los recibos SIN conciliar, cancela los pares positivo/negativo
@@ -306,7 +323,7 @@ def hoja_revisar(rec, ext):
     return df
 
 
-def armar_salida(rec, ext, unicos, anulados, desde, hasta, archivos):
+def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
     conc = unicos.rename(columns={"Referencia": "Referencia mov", "Detalle": "Detalle mov"})
     conc = conc[["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna",
                  "Tipo Asiento", "Fuente", "Importe mov", "Diferencia", "Referencia mov",
@@ -323,6 +340,7 @@ def armar_salida(rec, ext, unicos, anulados, desde, hasta, archivos):
            ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos", "", ""],
            ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados", "", ""],
            ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe", "", ""],
+           ["Regla 5", "Pagador Grupo Oroño: los movimientos que paga la empresa se apartan antes de conciliar", "", ""],
            ["", "En las tres primeras, TVIR solo se cruza contra Mercado Pago", "", ""],
            ["", "", "", ""],
            ["RECIBOS", "Líneas", "Importe", ""]]
@@ -355,14 +373,20 @@ def armar_salida(rec, ext, unicos, anulados, desde, hasta, archivos):
     h = ext[ext.Estado.str.startswith("Sin")]
     res.append(["Movimientos sin recibo", "", round(h.Importe.sum(), 2), len(h)])
     res.append(["Anulados y neteados (regla 4)", len(anulados) * 2, 0, ""])
+    res.append(["Pagador Grupo Oroño (estos no tienen recibo)", "",
+                round(propios.Importe.sum(), 2) if len(propios) else 0, len(propios)])
     res.append(["", "", "", ""])
     res.append(["ARCHIVOS LEÍDOS", "", "", ""])
     for tipo, nombre in archivos:
         res.append([tipo, nombre, "", ""])
     resumen = pd.DataFrame(res)
 
-    return {"Resumen": resumen, "Conciliados": conc, "Anulados": anulados, "Para revisar": revisar,
-            "Recibos sin movimiento": rec_sin, "Movimientos sin recibo": ext_sin}
+    hojas = {"Resumen": resumen, "Conciliados": conc, "Anulados": anulados}
+    if len(propios):
+        hojas["Pagador Grupo Oroño"] = propios[COLS_EXT].sort_values(["Fuente", "Fecha"])
+    hojas.update({"Para revisar": revisar, "Recibos sin movimiento": rec_sin,
+                  "Movimientos sin recibo": ext_sin})
+    return hojas
 
 
 def escribir_excel(hojas, destino):
@@ -436,6 +460,12 @@ def main():
     ext = pd.concat([d for k in ("payway", "qr", "mp") for d in datos[k]]).drop_duplicates()
     desde, hasta = rec.Fecha.min(), rec.Fecha.max()
 
+    # regla 5: los movimientos pagados por la propia empresa no se concilian
+    propios = ext[ext.Detalle.map(pagador_propio)].copy()
+    if len(propios):
+        print(f"  aparta {len(propios)} movimientos con pagador Grupo Oroño (regla 5)")
+        ext = ext[~ext.Detalle.map(pagador_propio)]
+
     print(f"\nConciliando {len(rec)} líneas de recibos contra {len(ext)} movimientos...")
     rec, ext, unicos = conciliar(rec, ext)
     anulados, fuera = netear(rec)
@@ -444,7 +474,7 @@ def main():
         rec = rec[~rec._r.isin(fuera)].drop(columns=["_r", "Estado"])
         ext = ext.drop(columns=["_e", "Estado"])
         rec, ext, unicos = conciliar(rec, ext)
-    hojas = armar_salida(rec, ext, unicos, anulados, desde, hasta, archivos)
+    hojas = armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos)
 
     destino = SALIDA / f"Conciliacion_{desde:%Y-%m-%d}_{hasta:%Y-%m-%d}.xlsx"
     escribir_excel(hojas, destino)

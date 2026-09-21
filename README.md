@@ -16,8 +16,11 @@ presentados a Payway, las transferencias QR de Payway y Mercado Pago.
      sin conciliar, de la misma fecha, el mismo cliente y el mismo importe, se cancelan entre sí y
      salen del informe; después se vuelven a correr las reglas 1 a 3. Los negativos que ya
      conciliaron contra una devolución real del procesador no se netean.
+  5. **Pagador Grupo Oroño**: antes de conciliar se apartan los movimientos cuyo campo
+     "Pagador:" es Grupo Oroño, porque los hace la empresa y no salen de un recibo. Solo se
+     mira el pagador: el texto "Producto de Grupooroño" no excluye nada.
   En las tres primeras, TVIR solo se cruza contra MP. Lo que no cierra queda en "Para revisar".
   La columna "Apareo" del Excel indica de cuál de las tres primeras reglas salió cada fila.
-- Salida: Excel con Resumen, Conciliados, Anulados, Para revisar, Recibos sin movimiento y Movimientos sin recibo.
+- Salida: Excel con Resumen, Conciliados, Anulados, Pagador Grupo Oroño, Para revisar, Recibos sin movimiento y Movimientos sin recibo.
 
 `conciliar.py` es la versión de escritorio (Python) con las mismas reglas.
