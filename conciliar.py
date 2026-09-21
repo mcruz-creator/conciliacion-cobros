@@ -294,12 +294,13 @@ def netear(rec):
 # ---------------------------------------------------------------- salida
 COLS_REC = ["Fecha", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Importe"]
 COLS_EXT = ["Fuente", "Fecha", "Importe", "Referencia", "Detalle", "Terminal / Caja"]
+COLS_REV = ["Grupo", "Fecha", "Importe", "Cant. recibos", "Cant. movimientos", "Lado",
+            "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente",
+            "Referencia", "Detalle", "Terminal / Caja"]
 
 
-def hoja_revisar(rec, ext):
-    """Por cada fecha + importe con candidatos ambiguos: todos los recibos y movimientos juntos."""
-    r = rec[rec.Estado == "Para revisar"]
-    e = ext[ext.Estado == "Para revisar"]
+def hoja_grupos(r, e, con_estado=False):
+    """Por cada fecha + importe: todos los recibos y movimientos juntos, uno debajo del otro."""
     filas = []
     grupos = sorted(set(zip(r.Fecha, r.Importe)) | set(zip(e.Fecha, e.Importe)))
     for n, (f, imp) in enumerate(grupos, 1):
@@ -308,16 +309,16 @@ def hoja_revisar(rec, ext):
         base = {"Grupo": n, "Fecha": f, "Importe": imp,
                 "Cant. recibos": len(gr), "Cant. movimientos": len(ge)}
         for _, x in gr.iterrows():
-            filas.append({**base, "Lado": "Recibo", "Nro Recibo": x["Nro Recibo"],
+            est = {"Estado": x.Estado if x.Estado == "Para revisar" else "Recibo sin movimiento"} if con_estado else {}
+            filas.append({**est, **base, "Lado": "Recibo", "Nro Recibo": x["Nro Recibo"],
                           "Cliente": x.Cliente, "Cajero": x.Cajero, "Columna": x.Columna,
                           "Tipo Asiento": x["Tipo Asiento"]})
         for _, x in ge.iterrows():
-            filas.append({**base, "Lado": "Movimiento", "Fuente": x.Fuente,
+            est = {"Estado": x.Estado if x.Estado == "Para revisar" else "Movimiento sin recibo"} if con_estado else {}
+            filas.append({**est, **base, "Lado": "Movimiento", "Fuente": x.Fuente,
                           "Referencia": x.Referencia, "Detalle": x.Detalle,
                           "Terminal / Caja": x["Terminal / Caja"]})
-    cols = ["Grupo", "Fecha", "Importe", "Cant. recibos", "Cant. movimientos", "Lado",
-            "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente",
-            "Referencia", "Detalle", "Terminal / Caja"]
+    cols = (["Estado"] if con_estado else []) + COLS_REV
     df = pd.DataFrame(filas).reindex(columns=cols)
     df["Nro Recibo"] = df["Nro Recibo"].astype("Int64")
     return df
@@ -330,7 +331,8 @@ def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
                  "Detalle mov", "Terminal / Caja"]]
     conc = conc.sort_values(["Fecha", "Nro Recibo"])
 
-    revisar = hoja_revisar(rec, ext)
+    revisar = hoja_grupos(rec[rec.Estado == "Para revisar"], ext[ext.Estado == "Para revisar"])
+    trabajo = hoja_grupos(rec[rec.Estado != "Conciliado"], ext[ext.Estado != "Conciliado"], True)
     rec_sin = rec[rec.Estado.str.startswith("Sin")][COLS_REC].sort_values(["Fecha", "Nro Recibo"])
     ext_sin = ext[ext.Estado.str.startswith("Sin")][COLS_EXT].sort_values(["Fuente", "Fecha"])
 
@@ -384,8 +386,8 @@ def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
     hojas = {"Resumen": resumen, "Conciliados": conc, "Anulados": anulados}
     if len(propios):
         hojas["Pagador Grupo Oroño"] = propios[COLS_EXT].sort_values(["Fuente", "Fecha"])
-    hojas.update({"Para revisar": revisar, "Recibos sin movimiento": rec_sin,
-                  "Movimientos sin recibo": ext_sin})
+    hojas.update({"Hoja de trabajo": trabajo, "Para revisar": revisar,
+                  "Recibos sin movimiento": rec_sin, "Movimientos sin recibo": ext_sin})
     return hojas
 
 
@@ -421,10 +423,11 @@ def escribir_excel(hojas, destino):
                 if row[0].value and str(row[0].value).isupper():
                     for c in row:
                         c.font = Font(bold=True)
-        if ws.title == "Para revisar" and "Grupo" in encabezados:
+        if "Grupo" in encabezados:
             # sombreado alternado por grupo para leerlo más fácil
+            g = encabezados.index("Grupo")
             for row in ws.iter_rows(min_row=2):
-                if row[0].value and row[0].value % 2 == 0:
+                if row[g].value and row[g].value % 2 == 0:
                     for c in row:
                         c.fill = gris
     wb.save(destino)

@@ -537,27 +537,42 @@
         { importes: [2], fechas: [1] }), "Pagador Grupo Oroño");
     }
 
+    // agrupa recibos y movimientos por fecha + importe, con las columnas de "Para revisar"
+    function agrupado(rr, mr, conEstado) {
+      const claves = [...new Set([...rr, ...mr].map((x) => `${x.fecha}|${x.importe}`))].sort((a, b) => {
+        const [fa, ia] = a.split("|"), [fb, ib] = b.split("|");
+        return fa === fb ? Number(ia) - Number(ib) : fa.localeCompare(fb);
+      });
+      const filas = [];
+      const grupoDeFila = [null];
+      // en la hoja de trabajo la primera columna dice de qué lista viene cada fila
+      const est = (x, sola) => (conEstado ? [x.estado === "Para revisar" ? "Para revisar" : sola] : []);
+      claves.forEach((k, n) => {
+        const [fe, imp] = k.split("|");
+        const gr = rr.filter((x) => x.fecha === fe && String(x.importe) === imp);
+        const gm = mr.filter((x) => x.fecha === fe && String(x.importe) === imp);
+        const base = [n + 1, f(fe), pesos(Number(imp)), gr.length, gm.length];
+        gr.forEach((x) => { filas.push([...est(x, "Recibo sin movimiento"), ...base, "Recibo", Number(x.nroRecibo), x.cliente, x.cajero, x.columna, x.tipoAsiento, "", "", "", ""]); grupoDeFila.push(n + 1); });
+        gm.forEach((x) => { filas.push([...est(x, "Movimiento sin recibo"), ...base, "Movimiento", "", "", "", "", "", x.fuente, x.referencia, x.detalle, x.terminal]); grupoDeFila.push(n + 1); });
+      });
+      return { filas, grupoDeFila };
+    }
+
+    const COLS_REV = ["Grupo", "Fecha", "Importe", "Cant. recibos", "Cant. movimientos", "Lado", "Nro Recibo",
+                      "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente", "Referencia", "Detalle",
+                      "Terminal / Caja"];
+
+    // Hoja de trabajo: todo lo pendiente junto (para revisar + lo que no tiene contrapartida)
+    const tra = agrupado(recibos.filter((x) => x.estado !== "Conciliado"),
+                         movs.filter((x) => x.estado !== "Conciliado"), true);
+    XLSX.utils.book_append_sheet(wb, hoja(["Estado", ...COLS_REV], tra.filas,
+      { importes: [3], fechas: [2], relleno: (r) => tra.grupoDeFila[r] % 2 === 0 }), "Hoja de trabajo");
+
     // Para revisar: agrupado por fecha + importe
-    const rr = recibos.filter((x) => x.estado === "Para revisar");
-    const mr = movs.filter((x) => x.estado === "Para revisar");
-    const claves = [...new Set([...rr, ...mr].map((x) => `${x.fecha}|${x.importe}`))].sort((a, b) => {
-      const [fa, ia] = a.split("|"), [fb, ib] = b.split("|");
-      return fa === fb ? Number(ia) - Number(ib) : fa.localeCompare(fb);
-    });
-    const rev = [];
-    const grupoDeFila = [null];
-    claves.forEach((k, n) => {
-      const [fe, imp] = k.split("|");
-      const gr = rr.filter((x) => x.fecha === fe && String(x.importe) === imp);
-      const gm = mr.filter((x) => x.fecha === fe && String(x.importe) === imp);
-      const base = [n + 1, f(fe), pesos(Number(imp)), gr.length, gm.length];
-      gr.forEach((x) => { rev.push([...base, "Recibo", Number(x.nroRecibo), x.cliente, x.cajero, x.columna, x.tipoAsiento, "", "", "", ""]); grupoDeFila.push(n + 1); });
-      gm.forEach((x) => { rev.push([...base, "Movimiento", "", "", "", "", "", x.fuente, x.referencia, x.detalle, x.terminal]); grupoDeFila.push(n + 1); });
-    });
-    XLSX.utils.book_append_sheet(wb, hoja(
-      ["Grupo", "Fecha", "Importe", "Cant. recibos", "Cant. movimientos", "Lado", "Nro Recibo", "Cliente",
-       "Cajero", "Columna", "Tipo Asiento", "Fuente", "Referencia", "Detalle", "Terminal / Caja"],
-      rev, { importes: [2], fechas: [1], relleno: (r) => grupoDeFila[r] % 2 === 0 }), "Para revisar");
+    const rev = agrupado(recibos.filter((x) => x.estado === "Para revisar"),
+                         movs.filter((x) => x.estado === "Para revisar"), false);
+    XLSX.utils.book_append_sheet(wb, hoja(COLS_REV, rev.filas,
+      { importes: [2], fechas: [1], relleno: (r) => rev.grupoDeFila[r] % 2 === 0 }), "Para revisar");
 
     // Pendientes
     const rs = recibos.filter((x) => x.estado === "Sin movimiento")

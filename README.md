@@ -21,6 +21,9 @@ presentados a Payway, las transferencias QR de Payway y Mercado Pago.
      mira el pagador: el texto "Producto de Grupooroño" no excluye nada.
   En las tres primeras, TVIR solo se cruza contra MP. Lo que no cierra queda en "Para revisar".
   La columna "Apareo" del Excel indica de cuál de las tres primeras reglas salió cada fila.
-- Salida: Excel con Resumen, Conciliados, Anulados, Pagador Grupo Oroño, Para revisar, Recibos sin movimiento y Movimientos sin recibo.
+- Salida: Excel con Resumen, Conciliados, Anulados, Pagador Grupo Oroño, Hoja de trabajo, Para revisar,
+  Recibos sin movimiento y Movimientos sin recibo. La **Hoja de trabajo** junta todo lo pendiente
+  (las tres últimas hojas) agrupado por fecha e importe, con las columnas de "Para revisar" y una
+  columna "Estado" que dice de cuál de las tres viene cada fila.
 
 `conciliar.py` es la versión de escritorio (Python) con las mismas reglas.
