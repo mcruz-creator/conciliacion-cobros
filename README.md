@@ -12,8 +12,12 @@ presentados a Payway, las transferencias QR de Payway y Mercado Pago.
      movimientos. El grupo cierra y se concilia en bloque; el apareo interno va por orden de carga.
   3. **Diferencia de centavos**: sobre lo que quedó sin conciliar, misma fecha y una diferencia de
      importe de hasta $0,99 en cualquier dirección, siempre que sea única de los dos lados.
-  En las tres, TVIR solo se cruza contra MP. Lo que no cierra queda en "Para revisar".
-  La columna "Apareo" del Excel indica de cuál de las tres reglas salió cada fila.
-- Salida: Excel con Resumen, Conciliados, Para revisar, Recibos sin movimiento y Movimientos sin recibo.
+  4. **Neteo de anulaciones**: después de las tres anteriores, un recibo positivo y uno negativo
+     sin conciliar, de la misma fecha, el mismo cliente y el mismo importe, se cancelan entre sí y
+     salen del informe; después se vuelven a correr las reglas 1 a 3. Los negativos que ya
+     conciliaron contra una devolución real del procesador no se netean.
+  En las tres primeras, TVIR solo se cruza contra MP. Lo que no cierra queda en "Para revisar".
+  La columna "Apareo" del Excel indica de cuál de las tres primeras reglas salió cada fila.
+- Salida: Excel con Resumen, Conciliados, Anulados, Para revisar, Recibos sin movimiento y Movimientos sin recibo.
 
 `conciliar.py` es la versión de escritorio (Python) con las mismas reglas.

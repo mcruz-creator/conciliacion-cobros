@@ -16,7 +16,13 @@ Reglas de conciliación (sin desempates ni tolerancias):
   3. Diferencia de centavos: sobre lo que quedó sin conciliar, misma FECHA y
      una diferencia de importe de hasta $0,99 en cualquier dirección, siempre
      que sea única de los dos lados (el QR redondea al peso entero).
-  En las tres, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
+  4. Neteo de anulaciones: después de las tres anteriores, si entre los recibos
+     que quedaron SIN conciliar hay, en la misma FECHA y para el mismo CLIENTE,
+     uno positivo y uno negativo del mismo importe, los dos se cancelan entre sí
+     y salen del informe (la anulación nunca llegó al procesador). Después se
+     vuelven a correr las reglas 1 a 3 sobre lo que quedó. Los recibos negativos
+     que YA conciliaron contra una devolución real no se netean nunca.
+  En las tres primeras, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
   grupo que empata en cantidad pero no tiene movimientos de MP suficientes para
   sus videoconsultas NO cierra. Todo lo demás queda para revisión manual.
 
@@ -236,6 +242,38 @@ def conciliar(rec, ext):
     return rec, ext, unicos
 
 
+def netear(rec):
+    """
+    Regla 4: entre los recibos SIN conciliar, cancela los pares positivo/negativo
+    de la misma fecha, el mismo cliente y el mismo importe. Devuelve el DataFrame
+    de pares anulados (una fila por par) y la lista de _r que salen del informe.
+    """
+    libre = rec[(rec.Estado != "Conciliado") & (rec.Importe != 0)].copy()
+    libre["_abs"] = libre.Importe.abs().round(2)
+    pares, fuera = [], []
+    for _, g in libre.groupby(["Fecha", "Cliente", "_abs"]):
+        pos = g[g.Importe > 0].sort_values("Nro Recibo")
+        neg = g[g.Importe < 0].sort_values("Nro Recibo")
+        n = min(len(pos), len(neg))
+        if not n:
+            continue
+        pos, neg = pos.head(n), neg.head(n)
+        fuera += list(pos._r) + list(neg._r)
+        for (_, p), (_, q) in zip(pos.iterrows(), neg.iterrows()):
+            pares.append({"Fecha": p.Fecha, "Cliente": p.Cliente, "Importe": p.Importe,
+                          "Recibo": p["Nro Recibo"], "Cajero": p.Cajero, "Columna": p.Columna,
+                          "Tipo Asiento": p["Tipo Asiento"], "Recibo anulación": q["Nro Recibo"],
+                          "Cajero anulación": q.Cajero, "Columna anulación": q.Columna,
+                          "Tipo Asiento anulación": q["Tipo Asiento"], "Importe anulación": q.Importe})
+    cols = ["Fecha", "Cliente", "Importe", "Recibo", "Cajero", "Columna", "Tipo Asiento",
+            "Recibo anulación", "Cajero anulación", "Columna anulación",
+            "Tipo Asiento anulación", "Importe anulación"]
+    anulados = pd.DataFrame(pares, columns=cols)
+    if len(anulados):
+        anulados = anulados.sort_values(["Fecha", "Recibo"])
+    return anulados, fuera
+
+
 # ---------------------------------------------------------------- salida
 COLS_REC = ["Fecha", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Importe"]
 COLS_EXT = ["Fuente", "Fecha", "Importe", "Referencia", "Detalle", "Terminal / Caja"]
@@ -268,7 +306,7 @@ def hoja_revisar(rec, ext):
     return df
 
 
-def armar_salida(rec, ext, unicos, desde, hasta, archivos):
+def armar_salida(rec, ext, unicos, anulados, desde, hasta, archivos):
     conc = unicos.rename(columns={"Referencia": "Referencia mov", "Detalle": "Detalle mov"})
     conc = conc[["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna",
                  "Tipo Asiento", "Fuente", "Importe mov", "Diferencia", "Referencia mov",
@@ -284,7 +322,8 @@ def armar_salida(rec, ext, unicos, desde, hasta, archivos):
            ["Regla 1", "Par directo: misma fecha + mismo importe exacto, único de ambos lados", "", ""],
            ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos", "", ""],
            ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados", "", ""],
-           ["", "En las tres, TVIR solo se cruza contra Mercado Pago", "", ""],
+           ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe", "", ""],
+           ["", "En las tres primeras, TVIR solo se cruza contra Mercado Pago", "", ""],
            ["", "", "", ""],
            ["RECIBOS", "Líneas", "Importe", ""]]
     for col in COLS_TARJETA + COLS_MP:
@@ -315,13 +354,14 @@ def armar_salida(rec, ext, unicos, desde, hasta, archivos):
     res.append(["Recibos sin movimiento", len(g), round(g.Importe.sum(), 2), ""])
     h = ext[ext.Estado.str.startswith("Sin")]
     res.append(["Movimientos sin recibo", "", round(h.Importe.sum(), 2), len(h)])
+    res.append(["Anulados y neteados (regla 4)", len(anulados) * 2, 0, ""])
     res.append(["", "", "", ""])
     res.append(["ARCHIVOS LEÍDOS", "", "", ""])
     for tipo, nombre in archivos:
         res.append([tipo, nombre, "", ""])
     resumen = pd.DataFrame(res)
 
-    return {"Resumen": resumen, "Conciliados": conc, "Para revisar": revisar,
+    return {"Resumen": resumen, "Conciliados": conc, "Anulados": anulados, "Para revisar": revisar,
             "Recibos sin movimiento": rec_sin, "Movimientos sin recibo": ext_sin}
 
 
@@ -398,7 +438,13 @@ def main():
 
     print(f"\nConciliando {len(rec)} líneas de recibos contra {len(ext)} movimientos...")
     rec, ext, unicos = conciliar(rec, ext)
-    hojas = armar_salida(rec, ext, unicos, desde, hasta, archivos)
+    anulados, fuera = netear(rec)
+    if fuera:
+        print(f"  netea {len(fuera)} recibos en {len(anulados)} pares anulados (regla 4)")
+        rec = rec[~rec._r.isin(fuera)].drop(columns=["_r", "Estado"])
+        ext = ext.drop(columns=["_e", "Estado"])
+        rec, ext, unicos = conciliar(rec, ext)
+    hojas = armar_salida(rec, ext, unicos, anulados, desde, hasta, archivos)
 
     destino = SALIDA / f"Conciliacion_{desde:%Y-%m-%d}_{hasta:%Y-%m-%d}.xlsx"
     escribir_excel(hojas, destino)

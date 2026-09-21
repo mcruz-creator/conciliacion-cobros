@@ -12,7 +12,13 @@
  *   3. Diferencia de centavos: sobre lo que quedó sin conciliar, misma FECHA y
  *      una diferencia de importe de hasta $0,99 en cualquier dirección, siempre
  *      que sea única de los dos lados (el QR redondea al peso entero).
- *   En las tres, las columnas "solo MP" (videoconsultas) solo se cruzan contra
+ *   4. Neteo de anulaciones: después de las tres anteriores, si entre los recibos
+ *      que quedaron SIN conciliar hay, en la misma FECHA y para el mismo CLIENTE,
+ *      uno positivo y uno negativo del mismo importe, los dos se cancelan entre sí
+ *      y salen del informe (la anulación nunca llegó al procesador). Después se
+ *      vuelven a correr las reglas 1 a 3 sobre lo que quedó. Los recibos negativos
+ *      que YA conciliaron contra una devolución real no se netean nunca.
+ *   En las tres primeras, las columnas "solo MP" (videoconsultas) solo se cruzan contra
  *   Mercado Pago; un grupo que empata en cantidad pero no tiene suficientes
  *   movimientos de MP para sus videoconsultas NO cierra. Todo lo demás queda
  *   para revisión manual.
@@ -185,9 +191,11 @@
     const pares = [];
     recibos.forEach((r, i) => {
       r.estado = candRec[i].length ? "Para revisar" : "Sin movimiento";
+      r.modo = "";
     });
     movs.forEach((m, j) => {
       m.estado = candMov[j].length ? "Para revisar" : "Sin recibo";
+      m.modo = "";
     });
     candRec.forEach((js, i) => {
       if (js.length === 1 && candMov[js[0]].length === 1) {
@@ -260,6 +268,31 @@
     return pares;
   }
 
+  /**
+   * Regla 4: entre los recibos que quedaron sin conciliar, cancela los pares
+   * positivo/negativo de la misma fecha, el mismo cliente y el mismo importe.
+   * Devuelve los recibos que salen del informe, de a pares [positivo, negativo].
+   */
+  function netear(recibos) {
+    const grupos = new Map();
+    recibos.forEach((r) => {
+      if (r.estado === "Conciliado" || !r.importe) return;
+      const k = `${r.fecha}|${r.cliente}|${Math.abs(r.importe)}`;
+      if (!grupos.has(k)) grupos.set(k, { pos: [], neg: [] });
+      grupos.get(k)[r.importe > 0 ? "pos" : "neg"].push(r);
+    });
+    const orden = (a, b) => Number(a.nroRecibo) - Number(b.nroRecibo);
+    const fuera = [];
+    for (const g of grupos.values()) {
+      const n = Math.min(g.pos.length, g.neg.length);
+      if (!n) continue;
+      g.pos.sort(orden);
+      g.neg.sort(orden);
+      for (let i = 0; i < n; i++) fuera.push([g.pos[i], g.neg[i]]);
+    }
+    return fuera;
+  }
+
   // ------------------------------------------------------------ proceso completo
   /**
    * archivos: [{nombre, bytes: Uint8Array}]
@@ -297,13 +330,19 @@
     recibos = dedup(recibos, (r) => [r.nroRecibo, r.columna, r.importe, r.fecha].join("|"));
     movs = dedup(movs, (m) => [m.fuente, m.referencia, m.importe, m.fecha].join("|"));
 
-    const pares = conciliar(recibos, movs, cfg);
+    let pares = conciliar(recibos, movs, cfg);
+    const anulados = netear(recibos);
+    if (anulados.length) {
+      const fuera = new Set(anulados.flat());
+      recibos = recibos.filter((r) => !fuera.has(r));
+      pares = conciliar(recibos, movs, cfg);
+    }
     const fechas = recibos.map((r) => r.fecha).sort();
     const desde = fechas[0];
     const hasta = fechas[fechas.length - 1];
 
-    const resultado = resumir(recibos, movs, cfg, desde, hasta);
-    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg);
+    const resultado = resumir(recibos, movs, cfg, desde, hasta, anulados);
+    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg, anulados);
     return { resultado, avisos, leidos, libro, nombreSalida: `Conciliacion_${desde}_${hasta}.xlsx` };
   }
 
@@ -325,7 +364,7 @@
     return arr.reduce((s, x) => s + x.importe, 0);
   }
 
-  function resumir(recibos, movs, cfg, desde, hasta) {
+  function resumir(recibos, movs, cfg, desde, hasta, anulados) {
     const est = (arr, e) => arr.filter((x) => x.estado === e);
     const porModo = (f) => {
       const g = est(recibos, "Conciliado").filter(f);
@@ -354,6 +393,8 @@
                  importe: suma(est(recibos, "Para revisar")), importeMov: suma(est(movs, "Para revisar")) },
       recSinMov: { cant: est(recibos, "Sin movimiento").length, importe: suma(est(recibos, "Sin movimiento")) },
       movSinRec: { cant: est(movs, "Sin recibo").length, importe: suma(est(movs, "Sin recibo")) },
+      anulados: { rec: (anulados || []).length * 2, pares: (anulados || []).length,
+                  importe: (anulados || []).reduce((s, p) => s + p[0].importe, 0) },
     };
   }
 
@@ -397,7 +438,7 @@
     return ws;
   }
 
-  function armarLibro(recibos, movs, pares, R, leidos, cfg) {
+  function armarLibro(recibos, movs, pares, R, leidos, cfg, anulados) {
     const wb = XLSX.utils.book_new();
     const f = (x) => fechaExcel(x);
 
@@ -408,7 +449,8 @@
       ["Regla 1", "Par directo: misma fecha + mismo importe exacto, único de ambos lados"],
       ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos"],
       ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados"],
-      ["", `En las tres, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
+      ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe"],
+      ["", `En las tres primeras, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
       [],
       ["RECIBOS", "Líneas", "Importe"],
       ...R.recibosPorColumna.map((x) => [x.columna, x.cant, pesos(x.importe)]),
@@ -426,6 +468,7 @@
       ["Para revisar", R.revisar.rec, pesos(R.revisar.importe), R.revisar.mov],
       ["Recibos sin movimiento", R.recSinMov.cant, pesos(R.recSinMov.importe), ""],
       ["Movimientos sin recibo", "", pesos(R.movSinRec.importe), R.movSinRec.cant],
+      ["Anulados y neteados (regla 4)", R.anulados.rec, 0, ""],
       [],
       ["ARCHIVOS LEÍDOS"],
       ...leidos.map((l) => [nombreTipo(l.tipo), l.nombre]),
@@ -448,6 +491,18 @@
       ["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente",
        "Importe mov", "Diferencia", "Referencia mov", "Detalle mov", "Terminal / Caja"], conc,
       { importes: [1, 9, 10], fechas: [0] }), "Conciliados");
+
+    // Anulados por la regla 4
+    const anu = (anulados || [])
+      .slice()
+      .sort((a, b) => (a[0].fecha + a[0].nroRecibo).localeCompare(b[0].fecha + b[0].nroRecibo))
+      .map(([p, n], i) => [i + 1, f(p.fecha), p.cliente, pesos(p.importe),
+                           Number(p.nroRecibo), p.cajero, p.columna, p.tipoAsiento,
+                           Number(n.nroRecibo), n.cajero, n.columna, n.tipoAsiento, pesos(n.importe)]);
+    XLSX.utils.book_append_sheet(wb, hoja(
+      ["Par", "Fecha", "Cliente", "Importe", "Recibo", "Cajero", "Columna", "Tipo Asiento",
+       "Recibo anulación", "Cajero", "Columna", "Tipo Asiento", "Importe anulación"], anu,
+      { importes: [3, 12], fechas: [1], relleno: (r) => r % 2 === 0 }), "Anulados");
 
     // Para revisar: agrupado por fecha + importe
     const rr = recibos.filter((x) => x.estado === "Para revisar");
