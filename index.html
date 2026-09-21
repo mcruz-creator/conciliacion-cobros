@@ -343,7 +343,7 @@
   <div id="vista-bancos" class="vista" hidden>
     <h1 class="entra">Contabilización<br>en <em>bancos</em></h1>
     <div class="bajada entra">
-      <p>La liquidación mensual de Payway acreditada en la cuenta bancaria y el resumen de Mercado Pago, convertidos en el asiento contable: lo acreditado, los descuentos aplicados y su contrapartida.</p>
+      <p>Dos pasos sobre las liquidaciones del mes. Primero el control: que lo que las liquidaciones dicen haber acreditado sea lo que figura en el resumen. Después el asiento contable, con lo acreditado, los descuentos aplicados y su contrapartida.</p>
       <span class="candado">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
         Los archivos no salen de tu computadora
@@ -353,13 +353,13 @@
     <section class="seccion entra">
       <div class="rotulo"><span class="num">I.</span><h2>En preparación</h2></div>
       <div class="pendiente">
-        <h3>Falta ver los dos archivos del mes</h3>
-        <p>Esta sección todavía no lee nada. Para armarla hacen falta, una vez, un ejemplo de cada archivo:</p>
+        <h3>Falta ver los archivos del mes</h3>
+        <p>Esta sección todavía no lee nada. Va a tener dos pasos:</p>
         <ul>
-          <li>La <b>liquidación mensual de Payway</b> en PDF, tal como la bajás del portal.</li>
-          <li>El <b>resumen de Mercado Pago</b> en Excel, el de liquidaciones (no el de movimientos que ya usa la otra sección).</li>
+          <li><b>Paso 1 · Conciliar.</b> Cruzar las liquidaciones contra el resumen: que cada acreditación esté, por la fecha y el importe que corresponde, y que no sobre ni falte ninguna.</li>
+          <li><b>Paso 2 · Contabilizar.</b> Sobre lo que quedó conciliado, armar el asiento con el importe acreditado y cada descuento aplicado —comisiones, IVA, retenciones, percepciones— contra su cuenta contable.</li>
         </ul>
-        <p>Con eso a la vista se define qué conceptos trae cada liquidación —comisiones, IVA, retenciones, percepciones, impuesto al cheque— y contra qué cuenta contable va cada uno.</p>
+        <p>Para armarla hacen falta, una sola vez, un ejemplo de cada archivo del mes. Con eso a la vista se define qué trae cada uno y con qué clave se cruzan, igual que en la otra sección: sin desempates ni tolerancias inventadas.</p>
       </div>
     </section>
   </div><!-- /vista-bancos -->
@@ -369,7 +369,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=11"></script>
+<script src="conciliar.js?v=12"></script>
 <script>
 (function () {
   "use strict";
