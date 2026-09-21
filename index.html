@@ -141,13 +141,23 @@
 
   .acciones { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 22px; }
   button { font: 600 15px/1 var(--sans); border-radius: 3px; padding: 14px 24px; cursor: pointer; transition: transform .15s, background .15s, box-shadow .15s; }
-  .primario { background: var(--tinta); color: var(--papel); border: 1px solid var(--tinta); box-shadow: 3px 3px 0 var(--verde); }
+  /* mientras concilia: una linea de tinta que recorre el borde inferior */
+  .primario.trabajando { transform: none !important; }
+  .primario.trabajando::after { content: ""; position: absolute; left: 1px; right: 1px; bottom: 1px; height: 2px;
+                                background: var(--verde); transform-origin: left; animation: barrer 1.1s cubic-bezier(.45,0,.2,1) infinite; }
+  @keyframes barrer { 0% { transform: scaleX(0); opacity: 1; } 55% { transform: scaleX(1); opacity: 1; }
+                      100% { transform: scaleX(1); opacity: 0; } }
+  .primario { position: relative; background: var(--tinta); color: var(--papel); border: 1px solid var(--tinta); box-shadow: 3px 3px 0 var(--verde); }
   .primario:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--verde); }
   .primario:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--verde); }
   .primario:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
+  /* mientras concilia esta disabled (bloquea mouse Y teclado) pero se ve activo */
+  .primario:disabled.trabajando { opacity: 1; cursor: progress; box-shadow: 3px 3px 0 var(--verde); }
   .secundario { background: transparent; color: var(--tinta-suave); border: 1px solid var(--renglon); }
   .secundario:hover { color: var(--tinta); border-color: var(--tinta-suave); }
   .pista { font-size: 13px; color: var(--tinta-suave); }
+  .solo-lectores { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+                   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .error { margin: 16px 0 0; padding: 12px 14px; background: var(--lacre-claro); color: var(--lacre); border-left: 3px solid var(--lacre); font-weight: 500; }
 
   /* ------------------------------------------------ resultado */
@@ -175,6 +185,20 @@
   .b-ok { background: var(--verde); } .b-rev { background: var(--ocre); } .b-bad { background: var(--lacre); }
   .leyenda { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--tinta-suave); margin-top: 4px; }
   .leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 1px; margin-right: 6px; vertical-align: -1px; }
+  .mayor tbody tr { animation: aparecer .45s ease both; }
+  .mayor tbody tr:nth-child(1) { animation-delay: 0.34s; }
+  .mayor tbody tr:nth-child(2) { animation-delay: 0.39s; }
+  .mayor tbody tr:nth-child(3) { animation-delay: 0.43s; }
+  .mayor tbody tr:nth-child(4) { animation-delay: 0.48s; }
+  .mayor tbody tr:nth-child(5) { animation-delay: 0.52s; }
+  .mayor tbody tr:nth-child(6) { animation-delay: 0.57s; }
+  .mayor tbody tr:nth-child(7) { animation-delay: 0.61s; }
+  .mayor tbody tr:nth-child(8) { animation-delay: 0.66s; }
+  .mayor tbody tr:nth-child(9) { animation-delay: 0.70s; }
+  .mayor tbody tr:nth-child(10) { animation-delay: 0.75s; }
+  .mayor tbody tr:nth-child(11) { animation-delay: 0.79s; }
+  .mayor tbody tr:nth-child(12) { animation-delay: 0.84s; }
+  .mayor tbody tr:nth-child(n+13) { animation-delay: .84s; }
   @keyframes crecer { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   @keyframes aparecer { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
@@ -282,6 +306,7 @@
       <button class="primario" id="btnProcesar" disabled>Conciliar</button>
       <button class="secundario" id="btnLimpiar" hidden>Empezar de nuevo</button>
       <span class="pista" id="pistaProcesar">Falta al menos el listado de caja.</span>
+      <span id="estadoProceso" role="status" aria-live="polite" class="solo-lectores"></span>
     </div>
     <p id="error" class="error" hidden></p>
   </section>
@@ -375,6 +400,8 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const archivos = new Map(); // nombre -> {nombre, bytes}
+  let conciliando = false;        // hay una conciliacion en curso: el boton no se toca desde afuera
+  let sePuedeConciliar = false;  // lo fija pintarLista; el boton lo repone al terminar
   let ultimo = null;
 
   // ---------------------------------------------------------- secciones
@@ -474,7 +501,9 @@
     $("ignorados").innerHTML = ignorados.map((n) => `<li>${esc(n)}: no se reconoce el formato, se va a ignorar</li>`).join("");
 
     const faltan = Object.keys(TIPOS).filter((t) => !porTipo[t]);
-    $("btnProcesar").disabled = !porTipo.recibos;
+    sePuedeConciliar = !!porTipo.recibos;
+    // mientras se concilia el boton lo maneja el handler: pintarLista no lo pisa
+    if (!conciliando) $("btnProcesar").disabled = !sePuedeConciliar;
     $("pistaProcesar").textContent = !porTipo.recibos
       ? "Falta al menos el listado de caja."
       : faltan.length ? `Se puede conciliar, pero falta: ${faltan.map((t) => TIPOS[t].nombre).join(", ")}.` : "Todo listo.";
@@ -495,18 +524,46 @@
   }
 
   // ---------- proceso
-  $("btnProcesar").addEventListener("click", () => {
+  $("btnProcesar").addEventListener("click", async () => {
     $("error").hidden = true;
     const cfg = cfgActual();
     if (!cfg.colsTarjeta.length && !cfg.colsSoloMP.length) {
       return mostrarError("Configurá al menos una columna del listado de caja (sección III).");
     }
+    // procesar() es sincronico y congela la pantalla: hay que dejar pintar el aviso antes
+    const btn = $("btnProcesar");
+    if (btn.disabled || conciliando) return;   // el disabled ya bloquea mouse y teclado; esto es la red
+    const teniaFoco = document.activeElement === btn;
+    conciliando = true;
+    btn.disabled = true;
+    btn.classList.add("trabajando"); btn.textContent = "Conciliando";
+    $("estadoProceso").textContent = "Conciliando, puede demorar unos segundos.";
+    await new Promise((r) => {
+      let hecho = false;
+      const seguir = () => { if (!hecho) { hecho = true; r(); } };
+      requestAnimationFrame(() => requestAnimationFrame(seguir));
+      setTimeout(seguir, 120); // respaldo: si la pestana no esta pintando, rAF no se dispara nunca
+    });
     try {
+      // se cedio el hilo: el usuario pudo apretar "Empezar de nuevo" mientras tanto
+      if (!archivos.size) throw new Error("Ya no hay archivos cargados.");
       ultimo = Conciliador.procesar([...archivos.values()], cfg);
       pintarResultado(ultimo);
+      const R = ultimo.resultado;
+      $("estadoProceso").textContent = `Conciliación terminada: ${R.conciliado.rec} conciliados, `
+        + `${R.revisar.rec} para revisar, ${R.recSinMov.cant} recibos sin movimiento, `
+        + `${R.movSinRec.cant} movimientos sin recibo.`;
     } catch (e) {
       console.error(e);
       mostrarError(e.message || String(e));
+      $("estadoProceso").textContent = "La conciliación falló.";
+    } finally {
+      conciliando = false;
+      btn.classList.remove("trabajando");
+      btn.textContent = "Conciliar";     // rotulo fijo: no se lee del DOM, no se puede contaminar
+      btn.disabled = !sePuedeConciliar;
+      // deshabilitar el boton le saca el foco: si venia del teclado hay que devolverselo
+      if (teniaFoco && !btn.disabled) btn.focus({ preventScroll: true });
     }
   });
 
@@ -516,7 +573,47 @@
   }
 
   function cifra(clase, n, titulo, detalle) {
-    return `<div class="cifra ${clase}"><div class="n">${n}</div><div class="t">${titulo}</div><div class="d">${detalle}</div></div>`;
+    return `<div class="cifra ${clase}"><div class="n" data-n="${n}">${n}</div><div class="t">${titulo}</div><div class="d">${detalle}</div></div>`;
+  }
+
+  const sinMovimiento = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // cada cifra sube desde cero hasta su valor; arranca con el mismo retardo que su tarjeta
+  let generacionCifras = 0;
+  function contarCifras() {
+    const gen = ++generacionCifras;   // invalida cualquier conteo anterior todavia en vuelo
+    if (sinMovimiento()) return;
+    document.querySelectorAll("#kpis .n").forEach((el, i) => {
+      const fin = Number(el.dataset.n);
+      if (!Number.isFinite(fin) || fin <= 0) return;
+      const dur = 700, espera = 180 + i * 70;
+      // vencido: ya se fijo el valor real y nadie mas puede tocar este numero.
+      // Es lo que impide que un cuadro atrasado (pestana que no pintaba) reviva
+      // el conteo y vuelva a escribir un 0 sobre la cifra correcta.
+      let vencido = false;
+      const vigente = () => gen === generacionCifras && !vencido;
+      // si la corrida quedo vieja, se escribe el valor que el nodo declara en ese momento,
+      // nunca el parcial de la animacion. Hoy pintarResultado recrea las tarjetas y el nodo
+      // ya salio del documento, pero si alguien las reutiliza esto evita el numero a medias.
+      const soltar = () => { if (gen !== generacionCifras) el.textContent = el.dataset.n; };
+      setTimeout(() => {
+        if (!vigente()) return soltar();
+        requestAnimationFrame((t0) => {
+          if (!vigente()) return soltar();
+          (function paso(t) {
+            if (!vigente()) return soltar();
+            const p = Math.min(1, (t - t0) / dur);
+            el.textContent = String(Math.round(fin * (1 - Math.pow(1 - p, 3))));
+            if (p < 1) requestAnimationFrame(paso); else el.textContent = String(fin);
+          })(t0);
+        });
+      }, espera);
+      // red de seguridad: pase lo que pase con los cuadros, el valor final es el real
+      setTimeout(() => {
+        vencido = true;
+        if (gen === generacionCifras) el.textContent = String(fin);
+      }, espera + dur + 400);
+    });
   }
 
   function barra(etiqueta, partes, total) {
@@ -565,6 +662,7 @@
     panel.hidden = true;
     void panel.offsetWidth; // reinicia las animaciones
     panel.hidden = false;
+    contarCifras();
     panel.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
