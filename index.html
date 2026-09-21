@@ -47,6 +47,43 @@
   }
   main { max-width: 920px; margin: 0 auto; padding: 56px 16px 72px; }
 
+  /* ------------------------------------------------ navegación lateral */
+  .app { display: grid; grid-template-columns: 236px minmax(0, 1fr); align-items: start; }
+  .lateral { position: sticky; top: 0; height: 100vh; padding: 56px 14px 28px 20px;
+             background: var(--papel-2); border-right: 1px solid var(--renglon);
+             display: flex; flex-direction: column; gap: 4px; }
+  .lateral h2 { margin: 0 0 14px 12px; font: 500 11px/1 var(--sans);
+                letter-spacing: .18em; text-transform: uppercase; color: var(--tinta-suave); }
+  .nav-item { width: 100%; text-align: left; cursor: pointer; background: transparent;
+              border: 0; border-left: 3px solid transparent; border-radius: 0 7px 7px 0;
+              padding: 11px 12px; color: var(--tinta-suave); font: 500 14.5px/1.25 var(--sans); }
+  .nav-item:hover { background: var(--hoja); color: var(--tinta); }
+  .nav-item:focus-visible { outline: 2px solid var(--verde); outline-offset: -2px; }
+  .nav-item[aria-current="page"] { background: var(--hoja); border-left-color: var(--verde);
+                                   color: var(--tinta); font-weight: 600; }
+  .nav-item small { display: block; margin-top: 3px; font: 400 11.5px/1.35 var(--sans); color: var(--tinta-suave); }
+  .lateral .pie { margin-top: auto; padding-left: 12px; font: 400 11px/1.4 var(--mono); color: var(--tinta-suave); }
+
+  @media (max-width: 860px) {
+    .app { display: block; }
+    .lateral { position: static; height: auto; flex-direction: row; gap: 6px; overflow-x: auto;
+               padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--renglon); }
+    .lateral h2, .lateral .pie, .nav-item small { display: none; }
+    .nav-item { width: auto; white-space: nowrap; border-left: 0; border-bottom: 3px solid transparent;
+                border-radius: 7px 7px 0 0; }
+    .nav-item[aria-current="page"] { border-left-color: transparent; border-bottom-color: var(--verde); }
+    main { padding-top: 28px; }
+  }
+
+  /* ------------------------------------------------ sección en preparación */
+  .pendiente { background: var(--ocre-claro); border: 1px dashed var(--ocre); border-radius: 10px;
+               padding: 20px 22px; }
+  .pendiente h3 { margin: 0 0 10px; font: 600 15px/1.3 var(--sans); }
+  .pendiente p { margin: 0 0 12px; max-width: 62ch; }
+  .pendiente ul { margin: 0 0 4px; padding-left: 20px; max-width: 62ch; }
+  .pendiente li { margin-bottom: 7px; }
+  .pendiente li:last-child { margin-bottom: 0; }
+
   /* ------------------------------------------------ encabezado */
   .membrete { display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
               border-bottom: 1px solid var(--tinta); padding-bottom: 8px;
@@ -206,9 +243,19 @@
 </style>
 </head>
 <body>
+<div class="app">
+<nav class="lateral" aria-label="Secciones">
+  <h2>Secciones</h2>
+  <button class="nav-item" type="button" data-vista="cobros">Conciliación de cobros
+    <small>Recibos de caja contra Payway, QR y Mercado Pago</small></button>
+  <button class="nav-item" type="button" data-vista="bancos">Contabilización en bancos
+    <small>Liquidaciones acreditadas y su asiento contable</small></button>
+  <span class="pie">Procesamiento local</span>
+</nav>
 <main>
   <div class="membrete entra"><span>Grupo Oroño · Tesorería</span><span id="hoy"></span></div>
 
+  <div id="vista-cobros" class="vista">
   <h1 class="entra">Conciliación<br>de <em>cobros</em></h1>
   <div class="bajada entra">
     <p>Recibos de caja con tarjeta, QR y videoconsultas contra lo presentado en Payway, las transferencias QR y Mercado Pago.</p>
@@ -291,17 +338,65 @@
     </details>
   </section>
 
-  <footer><span>Conciliación de cobros · v6</span><span>Procesamiento local en el navegador</span></footer>
+  </div><!-- /vista-cobros -->
+
+  <div id="vista-bancos" class="vista" hidden>
+    <h1 class="entra">Contabilización<br>en <em>bancos</em></h1>
+    <div class="bajada entra">
+      <p>La liquidación mensual de Payway acreditada en la cuenta bancaria y el resumen de Mercado Pago, convertidos en el asiento contable: lo acreditado, los descuentos aplicados y su contrapartida.</p>
+      <span class="candado">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        Los archivos no salen de tu computadora
+      </span>
+    </div>
+
+    <section class="seccion entra">
+      <div class="rotulo"><span class="num">I.</span><h2>En preparación</h2></div>
+      <div class="pendiente">
+        <h3>Falta ver los dos archivos del mes</h3>
+        <p>Esta sección todavía no lee nada. Para armarla hacen falta, una vez, un ejemplo de cada archivo:</p>
+        <ul>
+          <li>La <b>liquidación mensual de Payway</b> en PDF, tal como la bajás del portal.</li>
+          <li>El <b>resumen de Mercado Pago</b> en Excel, el de liquidaciones (no el de movimientos que ya usa la otra sección).</li>
+        </ul>
+        <p>Con eso a la vista se define qué conceptos trae cada liquidación —comisiones, IVA, retenciones, percepciones, impuesto al cheque— y contra qué cuenta contable va cada uno.</p>
+      </div>
+    </section>
+  </div><!-- /vista-bancos -->
+
+  <footer><span id="pieSeccion">Conciliación de cobros</span><span>Procesamiento local en el navegador</span></footer>
 </main>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=10"></script>
+<script src="conciliar.js?v=11"></script>
 <script>
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
   const archivos = new Map(); // nombre -> {nombre, bytes}
   let ultimo = null;
+
+  // ---------------------------------------------------------- secciones
+  const VISTAS = {
+    cobros: { id: "vista-cobros", titulo: "Conciliación de cobros" },
+    bancos: { id: "vista-bancos", titulo: "Contabilización en bancos" },
+  };
+  function mostrarVista(v) {
+    if (!VISTAS[v]) v = "cobros";
+    Object.entries(VISTAS).forEach(([k, x]) => { $(x.id).hidden = k !== v; });
+    document.querySelectorAll(".nav-item").forEach((b) => {
+      if (b.dataset.vista === v) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    });
+    $("pieSeccion").textContent = VISTAS[v].titulo;
+    document.title = VISTAS[v].titulo;
+  }
+  document.querySelectorAll(".nav-item").forEach((b) => {
+    b.addEventListener("click", () => { location.hash = b.dataset.vista; });
+  });
+  window.addEventListener("hashchange", () => mostrarVista(location.hash.slice(1)));
+  mostrarVista(location.hash.slice(1));
 
   const fmt = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
   const plata = (c) => fmt.format(Conciliador.pesos(c));
