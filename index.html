@@ -267,10 +267,11 @@
       <summary><span class="num">III.</span><h2>Cómo concilia</h2><span class="mas">+</span></summary>
       <div class="cuerpo">
         <div class="regla">
-          <p class="cita">Misma fecha, mismo importe exacto, y que sea único de los dos lados.</p>
-          <p>Un recibo se da por conciliado solo si hay <b>un único</b> movimiento con su fecha e importe, y ese movimiento no coincide con ningún otro recibo.</p>
-          <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago.</p>
-          <p>No hay desempates, tolerancias ni ventanas de días. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
+          <p class="cita">Misma fecha y mismo importe exacto. Concilia cuando la correspondencia es unívoca, sea de a uno o de a grupo.</p>
+          <p><b>1. Par directo.</b> Hay <b>un único</b> movimiento con la fecha e importe del recibo, y ese movimiento no coincide con ningún otro recibo.</p>
+          <p><b>2. Grupo que cierra.</b> Dentro de una misma fecha e importe, la cantidad de recibos es <b>exactamente igual</b> a la de movimientos: el grupo cierra, no sobra ni falta nada, y se concilia en bloque. El apareo dentro del grupo va por orden de carga; lo verificado es el total del grupo, no el par uno por uno. La columna <b>Apareo</b> del Excel dice de cuál de las dos reglas salió cada fila.</p>
+          <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
+          <p>No hay desempates, tolerancias ni ventanas de días. Si las cantidades no coinciden, va a <b>Para revisar</b>. Si no aparece ningún candidato, queda como pendiente.</p>
         </div>
         <div class="cfg">
           <label>Columnas de tarjeta / QR
@@ -283,11 +284,11 @@
     </details>
   </section>
 
-  <footer><span>Conciliación de cobros · v2</span><span>Procesamiento local en el navegador</span></footer>
+  <footer><span>Conciliación de cobros · v3</span><span>Procesamiento local en el navegador</span></footer>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=2"></script>
+<script src="conciliar.js?v=3"></script>
 <script>
 (function () {
   "use strict";
@@ -424,7 +425,7 @@
     const R = r.resultado;
     $("periodo").textContent = `${fecha(R.desde)} — ${fecha(R.hasta)}`;
     $("kpis").innerHTML =
-      cifra("ok", R.conciliado.rec, "Conciliados", plata(R.conciliado.importe)) +
+      cifra("ok", R.conciliado.rec, "Conciliados", `${plata(R.conciliado.importe)}<br>${R.porPar.rec} directos · ${R.porGrupo.rec} en grupo`) +
       cifra("rev", R.revisar.rec, "Para revisar", `${plata(R.revisar.importe)}<br>${R.revisar.mov} movimientos`) +
       cifra("bad", R.recSinMov.cant, "Recibos sin movimiento", plata(R.recSinMov.importe)) +
       cifra("bad", R.movSinRec.cant, "Movimientos sin recibo", plata(R.movSinRec.importe));

@@ -6,8 +6,12 @@ Cruza los recibos de caja (columnas TSNS, TSNI, TSNZ y TVIR) contra los movimien
 presentados a Payway, las transferencias QR de Payway y Mercado Pago.
 
 - Los archivos se procesan en el navegador; no se suben a ningún servidor.
-- Regla: misma fecha + mismo importe exacto, única de ambos lados. TVIR solo contra MP.
-  Todo lo ambiguo queda en "Para revisar". Sin desempates ni tolerancias.
+- Reglas (sin desempates ni tolerancias):
+  1. **Par directo**: misma fecha + mismo importe exacto, único de ambos lados.
+  2. **Grupo que cierra**: misma fecha + mismo importe, y la misma cantidad de recibos que de
+     movimientos. El grupo cierra y se concilia en bloque; el apareo interno va por orden de carga.
+  En las dos, TVIR solo se cruza contra MP. Lo que no cierra queda en "Para revisar".
+  La columna "Apareo" del Excel indica de cuál de las dos reglas salió cada fila.
 - Salida: Excel con Resumen, Conciliados, Para revisar, Recibos sin movimiento y Movimientos sin recibo.
 
 `conciliar.py` es la versión de escritorio (Python) con la misma regla.

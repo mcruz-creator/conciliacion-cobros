@@ -6,11 +6,16 @@ Cruza los recibos de caja (columnas de tarjeta y videoconsultas) contra:
   - QR transferencia de Payway (CSV)
   - Movimientos de Mercado Pago (XLSX)
 
-Regla de conciliación (única, sin desempates):
-  Un recibo se concilia con un movimiento solo si tienen la MISMA FECHA y el
-  MISMO IMPORTE exacto, y esa combinación identifica a un único recibo y a un
-  único movimiento. Los recibos TVIR (videoconsultas) solo se cruzan contra MP.
-  Todo lo demás queda para revisión manual.
+Reglas de conciliación (sin desempates ni tolerancias):
+  1. Par directo: misma FECHA y mismo IMPORTE exacto, y esa combinación
+     identifica a un único recibo y a un único movimiento.
+  2. Grupo que cierra: dentro de una misma fecha e importe, si la cantidad de
+     recibos es exactamente igual a la de movimientos, el grupo cierra y se
+     concilia en bloque. El apareo dentro del grupo va por orden de carga: el
+     total del grupo está verificado, el par individual no.
+  En las dos, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
+  grupo que empata en cantidad pero no tiene movimientos de MP suficientes para
+  sus videoconsultas NO cierra. Todo lo demás queda para revisión manual.
 
 Uso: dejar los archivos en la carpeta "Entrada" y ejecutar. El resultado queda
 en "Salida/Conciliacion_<desde>_<hasta>.xlsx".
@@ -145,8 +150,10 @@ def detectar(path):
 def conciliar(rec, ext):
     """
     Arma todos los pares posibles recibo-movimiento con misma fecha e importe
-    (TVIR solo contra MP). Un par se concilia solo si ninguno de los dos tiene
-    otro candidato. El resto de los pares se agrupa para revisión manual.
+    (TVIR solo contra MP). Regla 1: un par se concilia si ninguno de los dos
+    tiene otro candidato. Regla 2: si dentro de una fecha + importe la cantidad
+    de recibos es igual a la de movimientos, el grupo cierra y se concilia en
+    bloque. El resto se agrupa para revisión manual.
     """
     rec = rec.reset_index(drop=True)
     ext = ext.reset_index(drop=True)
@@ -160,7 +167,7 @@ def conciliar(rec, ext):
     cand_e = pares.groupby("_e").size()
     pares["unico"] = pares._r.map(cand_r).eq(1) & pares._e.map(cand_e).eq(1)
 
-    unicos = pares[pares.unico]
+    unicos = pares[pares.unico].copy()
     ambiguos = pares[~pares.unico]
 
     rec["Estado"] = "Sin movimiento con misma fecha e importe"
@@ -169,6 +176,40 @@ def conciliar(rec, ext):
     ext["Estado"] = "Sin recibo con misma fecha e importe"
     ext.loc[ext._e.isin(ambiguos._e), "Estado"] = "Para revisar"
     ext.loc[ext._e.isin(unicos._e), "Estado"] = "Conciliado"
+    unicos["Apareo"] = "Par directo"
+
+    # regla 2: grupos de la misma fecha e importe que empatan en cantidad
+    por_ext = ext.groupby(["Fecha", "Importe"])._e.apply(list)
+    nuevos = []
+    for clave, ridx in rec.groupby(["Fecha", "Importe"])._r.apply(list).items():
+        eidx = por_ext.get(clave)
+        if eidx is None or len(eidx) != len(ridx):
+            continue
+        if (rec.loc[ridx, "Estado"] == "Conciliado").any():
+            continue  # ya resuelto por la regla 1
+        # las videoconsultas solo pueden ir contra MP: tiene que haber al menos
+        # tantos movimientos de MP como recibos TVIR
+        solo_mp = [i for i in ridx if rec.at[i, "Columna"] in COLS_MP]
+        resto = [i for i in ridx if rec.at[i, "Columna"] not in COLS_MP]
+        mp = [j for j in eidx if ext.at[j, "Fuente"] == "MP"]
+        otros = [j for j in eidx if ext.at[j, "Fuente"] != "MP"]
+        if len(solo_mp) > len(mp):
+            continue
+        izq = solo_mp + resto
+        der = mp[:len(solo_mp)] + otros + mp[len(solo_mp):]
+        for i, j in zip(izq, der):
+            rec.at[i, "Estado"] = "Conciliado"
+            ext.at[j, "Estado"] = "Conciliado"
+            nuevos.append((i, j, f"Grupo de {len(izq)}"))
+
+    if nuevos:
+        ri = [n[0] for n in nuevos]
+        ei = [n[1] for n in nuevos]
+        izq_df = rec.loc[ri].drop(columns=["Estado"]).reset_index(drop=True)
+        der_df = ext.loc[ei].drop(columns=["Estado", "Fecha", "Importe"]).reset_index(drop=True)
+        grupo = pd.concat([izq_df, der_df], axis=1)
+        grupo["Apareo"] = [n[2] for n in nuevos]
+        unicos = pd.concat([unicos, grupo], ignore_index=True)
     return rec, ext, unicos
 
 
@@ -206,8 +247,8 @@ def hoja_revisar(rec, ext):
 
 def armar_salida(rec, ext, unicos, desde, hasta, archivos):
     conc = unicos.rename(columns={"Referencia": "Referencia mov", "Detalle": "Detalle mov"})
-    conc = conc[["Fecha", "Importe", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento",
-                 "Fuente", "Referencia mov", "Detalle mov", "Terminal / Caja"]]
+    conc = conc[["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna",
+                 "Tipo Asiento", "Fuente", "Referencia mov", "Detalle mov", "Terminal / Caja"]]
     conc = conc.sort_values(["Fecha", "Nro Recibo"])
 
     revisar = hoja_revisar(rec, ext)
@@ -216,7 +257,9 @@ def armar_salida(rec, ext, unicos, desde, hasta, archivos):
 
     res = [["Período", f"{desde:%d/%m/%Y} al {hasta:%d/%m/%Y}", "", ""],
            ["Procesado", datetime.now().strftime("%d/%m/%Y %H:%M"), "", ""],
-           ["Regla", "Misma fecha + mismo importe exacto, único de ambos lados (TVIR solo contra MP)", "", ""],
+           ["Regla 1", "Par directo: misma fecha + mismo importe exacto, único de ambos lados", "", ""],
+           ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos", "", ""],
+           ["", "En las dos, TVIR solo se cruza contra Mercado Pago", "", ""],
            ["", "", "", ""],
            ["RECIBOS", "Líneas", "Importe", ""]]
     for col in COLS_TARJETA + COLS_MP:
@@ -236,6 +279,11 @@ def armar_salida(rec, ext, unicos, desde, hasta, archivos):
     for estado in ["Conciliado", "Para revisar"]:
         g, h = rec[rec.Estado == estado], ext[ext.Estado == estado]
         res.append([estado, len(g), round(g.Importe.sum(), 2), len(h)])
+        if estado == "Conciliado":
+            for etiqueta, sel in [("   por par directo (regla 1)", unicos.Apareo == "Par directo"),
+                                  ("   por grupo que cierra (regla 2)", unicos.Apareo != "Par directo")]:
+                g = unicos[sel]
+                res.append([etiqueta, len(g), round(g.Importe.sum(), 2), len(g)])
     g = rec[rec.Estado.str.startswith("Sin")]
     res.append(["Recibos sin movimiento", len(g), round(g.Importe.sum(), 2), ""])
     h = ext[ext.Estado.str.startswith("Sin")]

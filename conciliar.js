@@ -1,11 +1,18 @@
 /*
  * Conciliación de cobros con tarjeta / QR / Mercado Pago - Grupo Oroño
  *
- * Regla de conciliación (única, sin desempates):
- *   Un recibo se concilia con un movimiento solo si tienen la MISMA FECHA y el
- *   MISMO IMPORTE exacto, y esa combinación identifica a un único recibo y a un
- *   único movimiento. Las columnas "solo MP" (videoconsultas) solo se cruzan
- *   contra Mercado Pago. Todo lo demás queda para revisión manual.
+ * Reglas de conciliación (sin desempates ni tolerancias):
+ *   1. Par directo: misma FECHA y mismo IMPORTE exacto, y esa combinación
+ *      identifica a un único recibo y a un único movimiento.
+ *   2. Grupo que cierra: dentro de una misma fecha e importe, si la cantidad de
+ *      recibos es exactamente igual a la cantidad de movimientos, el grupo cierra
+ *      y se concilia en bloque. El apareo dentro del grupo es por orden de carga
+ *      (todos son del mismo día y del mismo importe): el total del grupo está
+ *      verificado, el par individual no.
+ *   En ambas, las columnas "solo MP" (videoconsultas) solo se cruzan contra
+ *   Mercado Pago; un grupo que empata en cantidad pero no tiene suficientes
+ *   movimientos de MP para sus videoconsultas NO cierra. Todo lo demás queda
+ *   para revisión manual.
  *
  * Funciona en el navegador (usa window.XLSX) y en Node (para pruebas).
  */
@@ -18,6 +25,8 @@
     colsTarjeta: ["TSNS", "TSNI", "TSNZ"], // amarillas: tarjeta / QR
     colsSoloMP: ["TVIR"], // naranja: videoconsultas, solo Mercado Pago
   };
+
+  const MODO_PAR = "Par directo";
 
   // ------------------------------------------------------------ utilidades
   const cents = (v) => Math.round(Number(v) * 100);
@@ -179,9 +188,41 @@
       if (js.length === 1 && candMov[js[0]].length === 1) {
         recibos[i].estado = "Conciliado";
         movs[js[0]].estado = "Conciliado";
-        pares.push([recibos[i], movs[js[0]]]);
+        recibos[i].modo = movs[js[0]].modo = MODO_PAR;
+        pares.push([recibos[i], movs[js[0]], MODO_PAR]);
       }
     });
+
+    // regla 2: grupos de la misma fecha e importe que empatan en cantidad
+    const grupos = new Map();
+    const bolsa = (k) => {
+      if (!grupos.has(k)) grupos.set(k, { rec: [], mov: [] });
+      return grupos.get(k);
+    };
+    recibos.forEach((r, i) => bolsa(clave(r)).rec.push(i));
+    movs.forEach((m, j) => bolsa(clave(m)).mov.push(j));
+
+    for (const g of grupos.values()) {
+      if (!g.rec.length || g.rec.length !== g.mov.length) continue;
+      if (g.rec.some((i) => recibos[i].estado === "Conciliado")) continue; // ya resuelto por la regla 1
+      // las videoconsultas solo pueden ir contra Mercado Pago: tiene que haber
+      // al menos tantos movimientos de MP como recibos "solo MP"
+      const soloMp = g.rec.filter((i) => cfg.colsSoloMP.includes(recibos[i].columna));
+      const resto = g.rec.filter((i) => !cfg.colsSoloMP.includes(recibos[i].columna));
+      const mp = g.mov.filter((j) => movs[j].fuente === "MP");
+      const otros = g.mov.filter((j) => movs[j].fuente !== "MP");
+      if (soloMp.length > mp.length) continue;
+      // primero las videoconsultas contra MP; el resto, en orden de carga
+      const izq = [...soloMp, ...resto];
+      const der = [...mp.slice(0, soloMp.length), ...otros, ...mp.slice(soloMp.length)];
+      const modo = `Grupo de ${izq.length}`;
+      izq.forEach((i, p) => {
+        const j = der[p];
+        recibos[i].estado = movs[j].estado = "Conciliado";
+        recibos[i].modo = movs[j].modo = modo;
+        pares.push([recibos[i], movs[j], modo]);
+      });
+    }
     return pares;
   }
 
@@ -252,6 +293,7 @@
 
   function resumir(recibos, movs, cfg, desde, hasta) {
     const est = (arr, e) => arr.filter((x) => x.estado === e);
+    const porModo = (arr, grupo) => est(arr, "Conciliado").filter((x) => (x.modo !== MODO_PAR) === !!grupo);
     return {
       desde, hasta,
       recibosPorColumna: [...cfg.colsTarjeta, ...cfg.colsSoloMP]
@@ -266,6 +308,10 @@
       totMovs: { cant: movs.length, importe: suma(movs) },
       conciliado: { rec: est(recibos, "Conciliado").length, mov: est(movs, "Conciliado").length,
                     importe: suma(est(recibos, "Conciliado")) },
+      porPar: { rec: porModo(recibos).length, importe: suma(porModo(recibos)) },
+      porGrupo: { rec: porModo(recibos, true).length, importe: suma(porModo(recibos, true)),
+                  grupos: new Set(est(recibos, "Conciliado").filter((r) => r.modo !== MODO_PAR)
+                    .map((r) => `${r.fecha}|${r.importe}`)).size },
       revisar: { rec: est(recibos, "Para revisar").length, mov: est(movs, "Para revisar").length,
                  importe: suma(est(recibos, "Para revisar")), importeMov: suma(est(movs, "Para revisar")) },
       recSinMov: { cant: est(recibos, "Sin movimiento").length, importe: suma(est(recibos, "Sin movimiento")) },
@@ -321,7 +367,9 @@
     const res = [
       ["Período", `${R.desde.split("-").reverse().join("/")} al ${R.hasta.split("-").reverse().join("/")}`],
       ["Procesado", new Date().toLocaleString("es-AR")],
-      ["Regla", `Misma fecha + mismo importe exacto, único de ambos lados (${cfg.colsSoloMP.join(", ")} solo contra MP)`],
+      ["Regla 1", "Par directo: misma fecha + mismo importe exacto, único de ambos lados"],
+      ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos"],
+      ["", `En las dos, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
       [],
       ["RECIBOS", "Líneas", "Importe"],
       ...R.recibosPorColumna.map((x) => [x.columna, x.cant, pesos(x.importe)]),
@@ -333,6 +381,8 @@
       [],
       ["RESULTADO", "Recibos", "Importe recibos", "Movimientos"],
       ["Conciliado", R.conciliado.rec, pesos(R.conciliado.importe), R.conciliado.mov],
+      ["   por par directo (regla 1)", R.porPar.rec, pesos(R.porPar.importe), R.porPar.rec],
+      [`   por grupo que cierra (regla 2, ${R.porGrupo.grupos} grupos)`, R.porGrupo.rec, pesos(R.porGrupo.importe), R.porGrupo.rec],
       ["Para revisar", R.revisar.rec, pesos(R.revisar.importe), R.revisar.mov],
       ["Recibos sin movimiento", R.recSinMov.cant, pesos(R.recSinMov.importe), ""],
       ["Movimientos sin recibo", "", pesos(R.movSinRec.importe), R.movSinRec.cant],
@@ -351,10 +401,10 @@
     const conc = pares
       .slice()
       .sort((a, b) => (a[0].fecha + a[0].nroRecibo).localeCompare(b[0].fecha + b[0].nroRecibo))
-      .map(([r, m]) => [f(r.fecha), pesos(r.importe), Number(r.nroRecibo), r.cliente, r.cajero, r.columna,
-                        r.tipoAsiento, m.fuente, m.referencia, m.detalle, m.terminal]);
+      .map(([r, m, modo]) => [f(r.fecha), pesos(r.importe), modo, Number(r.nroRecibo), r.cliente, r.cajero, r.columna,
+                              r.tipoAsiento, m.fuente, m.referencia, m.detalle, m.terminal]);
     XLSX.utils.book_append_sheet(wb, hoja(
-      ["Fecha", "Importe", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente",
+      ["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente",
        "Referencia mov", "Detalle mov", "Terminal / Caja"], conc, { importes: [1], fechas: [0] }), "Conciliados");
 
     // Para revisar: agrupado por fecha + importe
