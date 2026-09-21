@@ -21,9 +21,13 @@ presentados a Payway, las transferencias QR de Payway y Mercado Pago.
      mira el pagador: el texto "Producto de Grupooroño" no excluye nada.
   6. **Videoconsulta**: un movimiento cuyo detalle dice "Videoconsulta médica" solo concilia contra un
      recibo TVIR, nunca contra uno de mostrador, aunque la fecha y el importe coincidan.
+  7. **Rendimientos de Mercado Pago**: los movimientos de MP que vienen sin medio de pago son el
+     rendimiento diario de la cuenta (tampoco tienen local, caja, pagador ni comisión). Se apartan
+     antes de conciliar. Se mira el medio de pago y no el número de identificación: ese también
+     viene vacío en cobros reales de pacientes.
   En las tres primeras, TVIR solo se cruza contra MP. Lo que no cierra queda en "Para revisar".
   La columna "Apareo" del Excel indica de cuál de las tres primeras reglas salió cada fila.
-- Salida: Excel con Resumen, Conciliados, Anulados, Pagador Grupo Oroño, Hoja de trabajo, Para revisar,
+- Salida: Excel con Resumen, Conciliados, Anulados, Pagador Grupo Oroño, Rendimientos MP, Hoja de trabajo, Para revisar,
   Recibos sin movimiento y Movimientos sin recibo. La **Hoja de trabajo** junta todo lo pendiente
   (las tres últimas hojas) agrupado por fecha e importe, con las columnas de "Para revisar" y una
   columna "Estado" que dice de cuál de las tres viene cada fila. En ambas hojas el importe del

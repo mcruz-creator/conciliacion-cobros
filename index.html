@@ -275,6 +275,7 @@
           <p><b>4. Neteo de anulaciones.</b> Al final, entre los recibos que quedaron <b>sin conciliar</b>: si el mismo día y para el mismo cliente hay uno positivo y uno negativo del mismo importe, se cancelan entre sí y salen del informe, porque esa anulación nunca llegó al procesador. Después se vuelven a correr las tres reglas anteriores sobre lo que quedó. Un recibo negativo que ya concilió contra una devolución real (Payway «Devolución», QR «Devuelto», MP «Devolución de dinero») <b>no</b> se netea nunca. Los pares anulados quedan listados en la hoja <b>Anulados</b> del Excel; el total de recibos del período no cambia, porque cada par suma cero.</p>
           <p><b>5. Pagador Grupo Oroño.</b> Antes de conciliar se apartan los movimientos cuyo campo <b>Pagador</b> es Grupo Oroño: los hace la empresa, no salen de un recibo de caja. Se miran solo los caracteres que siguen a «Pagador:»; el texto «Producto de Grupooroño», que aparece en cobros de pacientes reales, <b>no</b> excluye nada. Van a la hoja <b>Pagador Grupo Oroño</b> del Excel y al renglón del Resumen, y no cuentan en el total de movimientos.</p>
           <p><b>6. Videoconsulta.</b> Un movimiento cuyo detalle dice «Videoconsulta médica» solo puede conciliar contra un recibo de una columna «solo MP» (TVIR). Nunca contra un recibo de mostrador, aunque la fecha y el importe coincidan: la videoconsulta se cobra antes de facturar y por Mercado Pago. Al revés también: un recibo TVIR no concilia contra un movimiento que no sea de Mercado Pago.</p>
+          <p><b>7. Rendimientos de Mercado Pago.</b> Los movimientos de Mercado Pago que vienen <b>sin medio de pago</b> son el rendimiento diario que paga la cuenta, no un cobro: tampoco tienen local, ni caja, ni pagador, ni comisión. Se apartan antes de conciliar, van a la hoja <b>Rendimientos MP</b> del Excel y no cuentan en el total de movimientos. Se mira el medio de pago y no el número de identificación, porque ese también viene vacío en cobros reales de pacientes («Producto de Grupooroño», pagados por Payins o MODO), que sí tienen recibo.</p>
           <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago en las tres primeras reglas, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
           <p>No hay desempates ni ventanas de días, y la diferencia de importe no puede pasar de $0,99. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
           <p>Todo lo que queda pendiente —lo de <b>Para revisar</b>, los recibos sin movimiento y los movimientos sin recibo— va además junto en la hoja <b>Hoja de trabajo</b> del Excel, agrupado por fecha e importe y con las mismas columnas, para revisarlo de una sola pasada. En las dos hojas el importe del recibo y el del movimiento van en columnas separadas, para poder sumar cada lado por su cuenta.</p>
@@ -294,7 +295,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=9"></script>
+<script src="conciliar.js?v=10"></script>
 <script>
 (function () {
   "use strict";
@@ -444,6 +445,9 @@
         : "") +
       (R.pagadorPropio.cant
         ? `<div class="barra-fila"><span class="et"></span><div class="nota-neteo">${R.pagadorPropio.cant === 1 ? "Se apartó 1 movimiento" : `Se apartaron ${R.pagadorPropio.cant} movimientos`} con pagador Grupo Oroño por ${plata(R.pagadorPropio.importe)} (regla 5). Los hace la empresa: no tienen recibo y quedan fuera del total de movimientos.</div></div>`
+        : "") +
+      (R.rendimientos.cant
+        ? `<div class="barra-fila"><span class="et"></span><div class="nota-neteo">${R.rendimientos.cant === 1 ? "Se apartó 1 rendimiento" : `Se apartaron ${R.rendimientos.cant} rendimientos`} de la cuenta de Mercado Pago por ${plata(R.rendimientos.importe)} (regla 7). No salen de un cobro: no tienen recibo y quedan fuera del total de movimientos. Están en la hoja <b>Rendimientos MP</b> del Excel.</div></div>`
         : "");
 
     $("avisos").innerHTML = r.avisos.map((a) => `<li>${esc(a)}</li>`).join("");

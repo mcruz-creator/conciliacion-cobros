@@ -25,6 +25,11 @@
  *   6. Videoconsulta: un movimiento cuyo detalle dice "Videoconsulta médica" solo
  *      puede conciliar contra un recibo de una columna "solo MP" (TVIR). Nunca
  *      contra un recibo de mostrador, aunque la fecha y el importe coincidan.
+ *   7. Rendimientos de Mercado Pago: los movimientos de MP sin MEDIO DE PAGO son
+ *      el rendimiento diario de la cuenta, no un cobro: no tienen local, ni caja,
+ *      ni pagador, ni comisión. Se apartan ANTES de conciliar y se informan
+ *      aparte. Se mira el medio de pago, no el número de identificación: ese
+ *      también viene vacío en cobros reales de pacientes.
  *   En las tres primeras, las columnas "solo MP" (videoconsultas) solo se cruzan contra
  *   Mercado Pago; un grupo que empata en cantidad pero no tiene suficientes
  *   movimientos de MP para sus videoconsultas NO cierra. Todo lo demás queda
@@ -62,6 +67,11 @@
     if (virtual && m.fuente !== "MP") return false;       // las videoconsultas se cobran solo por MP
     if (!virtual && esVideoconsulta(m)) return false;     // y un cobro de videoconsulta no es de mostrador
     return true;
+  }
+
+  /** regla 7: ¿es el rendimiento diario de la cuenta de MP? No tiene medio de pago. */
+  function esRendimiento(m) {
+    return m.fuente === "MP" && m.medio === "";
   }
 
   /** regla 5: ¿el movimiento lo pagó la propia empresa? Solo mira el campo "Pagador:". */
@@ -196,6 +206,7 @@
       fecha: g(f, "FECHA DE ORIGEN").slice(0, 10),
       importe: cents(toNum(f[col("VALOR DE LA COMPRA")])),
       referencia: `MP ${g(f, "ID DE OPERACIÓN EN MERCADO PAGO")}`,
+      medio: g(f, "MEDIO DE PAGO"),
       detalle: [g(f, "TIPO DE OPERACIÓN"), g(f, "MEDIO DE PAGO"),
                 g(f, "DETALLE DE LA VENTA").replace(/"/g, ""),
                 "Pagador: " + g(f, "PAGADOR")].join(" - "),
@@ -369,6 +380,10 @@
     const propios = movs.filter(pagadorPropio);
     movs = movs.filter((m) => !pagadorPropio(m));
 
+    // regla 7: el rendimiento de la cuenta de MP no sale de un cobro, no tiene recibo
+    const rendimientos = movs.filter(esRendimiento);
+    movs = movs.filter((m) => !esRendimiento(m));
+
     let pares = conciliar(recibos, movs, cfg);
     const anulados = netear(recibos);
     if (anulados.length) {
@@ -380,8 +395,8 @@
     const desde = fechas[0];
     const hasta = fechas[fechas.length - 1];
 
-    const resultado = resumir(recibos, movs, cfg, desde, hasta, anulados, propios);
-    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg, anulados, propios);
+    const resultado = resumir(recibos, movs, cfg, desde, hasta, anulados, propios, rendimientos);
+    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg, anulados, propios, rendimientos);
     return { resultado, avisos, leidos, libro, nombreSalida: `Conciliacion_${desde}_${hasta}.xlsx` };
   }
 
@@ -403,7 +418,7 @@
     return arr.reduce((s, x) => s + x.importe, 0);
   }
 
-  function resumir(recibos, movs, cfg, desde, hasta, anulados, propios) {
+  function resumir(recibos, movs, cfg, desde, hasta, anulados, propios, rendimientos) {
     const est = (arr, e) => arr.filter((x) => x.estado === e);
     const porModo = (f) => {
       const g = est(recibos, "Conciliado").filter(f);
@@ -433,6 +448,7 @@
       recSinMov: { cant: est(recibos, "Sin movimiento").length, importe: suma(est(recibos, "Sin movimiento")) },
       movSinRec: { cant: est(movs, "Sin recibo").length, importe: suma(est(movs, "Sin recibo")) },
       pagadorPropio: { cant: (propios || []).length, importe: suma(propios || []) },
+      rendimientos: { cant: (rendimientos || []).length, importe: suma(rendimientos || []) },
       anulados: { rec: (anulados || []).length * 2, pares: (anulados || []).length,
                   importe: (anulados || []).reduce((s, p) => s + p[0].importe, 0) },
     };
@@ -478,7 +494,7 @@
     return ws;
   }
 
-  function armarLibro(recibos, movs, pares, R, leidos, cfg, anulados, propios) {
+  function armarLibro(recibos, movs, pares, R, leidos, cfg, anulados, propios, rendimientos) {
     const wb = XLSX.utils.book_new();
     const f = (x) => fechaExcel(x);
 
@@ -492,6 +508,7 @@
       ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe"],
       ["Regla 5", "Pagador Grupo Oroño: los movimientos que paga la empresa se apartan antes de conciliar"],
       ["Regla 6", "Videoconsulta: un movimiento que dice \"Videoconsulta médica\" solo concilia contra un recibo " + cfg.colsSoloMP.join(", ")],
+      ["Regla 7", "Rendimientos: los movimientos de Mercado Pago sin medio de pago se apartan antes de conciliar"],
       ["", `En las tres primeras, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
       [],
       ["RECIBOS", "Líneas", "Importe"],
@@ -512,6 +529,7 @@
       ["Movimientos sin recibo", "", pesos(R.movSinRec.importe), R.movSinRec.cant],
       ["Anulados y neteados (regla 4)", R.anulados.rec, 0, ""],
       ["Pagador Grupo Oroño (estos no tienen recibo)", "", pesos(R.pagadorPropio.importe), R.pagadorPropio.cant],
+      ["Rendimientos de Mercado Pago (estos no tienen recibo)", "", pesos(R.rendimientos.importe), R.rendimientos.cant],
       [],
       ["ARCHIVOS LEÍDOS"],
       ...leidos.map((l) => [nombreTipo(l.tipo), l.nombre]),
@@ -556,6 +574,16 @@
       XLSX.utils.book_append_sheet(wb, hoja(
         ["Fuente", "Fecha", "Importe", "Referencia", "Detalle", "Terminal / Caja"], pr,
         { importes: [2], fechas: [1] }), "Pagador Grupo Oroño");
+    }
+
+    // Regla 7: rendimientos de la cuenta de Mercado Pago
+    if ((rendimientos || []).length) {
+      const rd = rendimientos
+        .slice()
+        .sort((a, b) => a.fecha.localeCompare(b.fecha))
+        .map((x) => [f(x.fecha), pesos(x.importe), x.referencia]);
+      XLSX.utils.book_append_sheet(wb, hoja(
+        ["Fecha", "Importe", "Referencia"], rd, { importes: [1], fechas: [0] }), "Rendimientos MP");
     }
 
     // agrupa recibos y movimientos por fecha + importe, con las columnas de "Para revisar"

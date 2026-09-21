@@ -26,12 +26,17 @@ Reglas de conciliación (sin desempates ni tolerancias):
      la empresa, no salen de un recibo de caja. Se apartan ANTES de conciliar y se
      informan aparte. Solo se mira el pagador: "Producto de Grupooroño" aparece en
      cobros de pacientes reales y NO los excluye.
-  En las tres primeras, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
-  grupo que empata en cantidad pero no tiene movimientos de MP suficientes para
-  sus videoconsultas NO cierra. Todo lo demás queda para revisión manual.
   6. Videoconsulta: un movimiento cuyo detalle dice "Videoconsulta médica" solo
      puede conciliar contra un recibo de una columna virtual (TVIR). Nunca contra
      un recibo de mostrador, aunque la fecha y el importe coincidan.
+  7. Rendimientos de Mercado Pago: los movimientos de MP sin MEDIO DE PAGO son el
+     rendimiento diario de la cuenta, no un cobro: no tienen local, ni caja, ni
+     pagador, ni comisión. Se apartan ANTES de conciliar y se informan aparte. Se
+     mira el medio de pago, no el número de identificación: ese también viene
+     vacío en cobros reales de pacientes.
+  En las tres primeras, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
+  grupo que empata en cantidad pero no tiene movimientos de MP suficientes para
+  sus videoconsultas NO cierra. Todo lo demás queda para revisión manual.
 
 Uso: dejar los archivos en la carpeta "Entrada" y ejecutar. El resultado queda
 en "Salida/Conciliacion_<desde>_<hasta>.xlsx".
@@ -143,6 +148,7 @@ def leer_mp(path):
         "Referencia": "MP " + df["ID DE OPERACIÓN EN MERCADO PAGO"].astype(str),
         "Detalle": detalle,
         "Terminal / Caja": caja,
+        "Medio": df["MEDIO DE PAGO"].fillna("").str.strip(),
     })
 
 
@@ -271,6 +277,12 @@ def es_videoconsulta(detalle):
     return "videoconsulta" in sin_acentos(detalle)
 
 
+def es_rendimiento(ext):
+    """Regla 7: ¿es el rendimiento diario de la cuenta de MP? No tiene medio de pago."""
+    medio = ext["Medio"] if "Medio" in ext else pd.Series("", index=ext.index)
+    return (ext.Fuente == "MP") & (medio.fillna("") == "")
+
+
 def pagador_propio(detalle):
     """Regla 5: ¿el movimiento lo pagó la propia empresa? Solo mira el campo "Pagador:"."""
     d = sin_acentos(detalle)
@@ -345,7 +357,7 @@ def hoja_grupos(r, e, con_estado=False):
     return df
 
 
-def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
+def armar_salida(rec, ext, unicos, anulados, propios, rendimientos, desde, hasta, archivos):
     conc = unicos.rename(columns={"Referencia": "Referencia mov", "Detalle": "Detalle mov"})
     conc = conc[["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna",
                  "Tipo Asiento", "Fuente", "Importe mov", "Diferencia", "Referencia mov",
@@ -365,6 +377,7 @@ def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
            ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe", "", ""],
            ["Regla 5", "Pagador Grupo Oroño: los movimientos que paga la empresa se apartan antes de conciliar", "", ""],
            ["Regla 6", 'Videoconsulta: un movimiento que dice "Videoconsulta médica" solo concilia contra un recibo ' + ", ".join(COLS_MP), "", ""],
+           ["Regla 7", "Rendimientos: los movimientos de Mercado Pago sin medio de pago se apartan antes de conciliar", "", ""],
            ["", "En las tres primeras, TVIR solo se cruza contra Mercado Pago", "", ""],
            ["", "", "", ""],
            ["RECIBOS", "Líneas", "Importe", ""]]
@@ -399,6 +412,8 @@ def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
     res.append(["Anulados y neteados (regla 4)", len(anulados) * 2, 0, ""])
     res.append(["Pagador Grupo Oroño (estos no tienen recibo)", "",
                 round(propios.Importe.sum(), 2) if len(propios) else 0, len(propios)])
+    res.append(["Rendimientos de Mercado Pago (estos no tienen recibo)", "",
+                round(rendimientos.Importe.sum(), 2) if len(rendimientos) else 0, len(rendimientos)])
     res.append(["", "", "", ""])
     res.append(["ARCHIVOS LEÍDOS", "", "", ""])
     for tipo, nombre in archivos:
@@ -408,6 +423,9 @@ def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
     hojas = {"Resumen": resumen, "Conciliados": conc, "Anulados": anulados}
     if len(propios):
         hojas["Pagador Grupo Oroño"] = propios[COLS_EXT].sort_values(["Fuente", "Fecha"])
+    if len(rendimientos):
+        hojas["Rendimientos MP"] = (rendimientos[["Fecha", "Importe", "Referencia"]]
+                                    .sort_values("Fecha"))
     hojas.update({"Hoja de trabajo": trabajo, "Para revisar": revisar,
                   "Recibos sin movimiento": rec_sin, "Movimientos sin recibo": ext_sin})
     return hojas
@@ -491,6 +509,14 @@ def main():
         print(f"  aparta {len(propios)} movimientos con pagador Grupo Oroño (regla 5)")
         ext = ext[~ext.Detalle.map(pagador_propio)]
 
+    # regla 7: el rendimiento de la cuenta de MP no sale de un cobro, no tiene recibo
+    rend = es_rendimiento(ext)
+    rendimientos = ext[rend].copy()
+    if len(rendimientos):
+        print(f"  aparta {len(rendimientos)} rendimientos de Mercado Pago (regla 7)")
+        ext = ext[~rend]
+    ext = ext.drop(columns=["Medio"], errors="ignore")
+
     print(f"\nConciliando {len(rec)} líneas de recibos contra {len(ext)} movimientos...")
     rec, ext, unicos = conciliar(rec, ext)
     anulados, fuera = netear(rec)
@@ -499,7 +525,7 @@ def main():
         rec = rec[~rec._r.isin(fuera)].drop(columns=["_r", "Estado"])
         ext = ext.drop(columns=["_e", "Estado"])
         rec, ext, unicos = conciliar(rec, ext)
-    hojas = armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos)
+    hojas = armar_salida(rec, ext, unicos, anulados, propios, rendimientos, desde, hasta, archivos)
 
     destino = SALIDA / f"Conciliacion_{desde:%Y-%m-%d}_{hasta:%Y-%m-%d}.xlsx"
     escribir_excel(hojas, destino)
