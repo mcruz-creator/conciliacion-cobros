@@ -13,7 +13,10 @@ Reglas de conciliación (sin desempates ni tolerancias):
      recibos es exactamente igual a la de movimientos, el grupo cierra y se
      concilia en bloque. El apareo dentro del grupo va por orden de carga: el
      total del grupo está verificado, el par individual no.
-  En las dos, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
+  3. Diferencia de centavos: sobre lo que quedó sin conciliar, misma FECHA y
+     una diferencia de importe de hasta $0,99 en cualquier dirección, siempre
+     que sea única de los dos lados (el QR redondea al peso entero).
+  En las tres, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
   grupo que empata en cantidad pero no tiene movimientos de MP suficientes para
   sus videoconsultas NO cierra. Todo lo demás queda para revisión manual.
 
@@ -34,6 +37,7 @@ warnings.filterwarnings("ignore")
 
 COLS_TARJETA = ["TSNS", "TSNI", "TSNZ"]  # amarillas: cobros con tarjeta / QR
 COLS_MP = ["TVIR"]  # naranja: videoconsultas, solo Mercado Pago
+TOLERANCIA = 0.99  # regla 3: diferencia máxima de importe, en pesos
 
 if getattr(sys, "frozen", False):
     BASE = Path(sys.executable).parent
@@ -210,6 +214,25 @@ def conciliar(rec, ext):
         grupo = pd.concat([izq_df, der_df], axis=1)
         grupo["Apareo"] = [n[2] for n in nuevos]
         unicos = pd.concat([unicos, grupo], ignore_index=True)
+
+    # regla 3: misma fecha y diferencia de hasta $0,99, única de los dos lados,
+    # sobre lo que quedó sin conciliar por las reglas 1 y 2
+    libre_r = rec[rec.Estado != "Conciliado"]
+    libre_e = ext[ext.Estado != "Conciliado"]
+    cerca = libre_r.merge(libre_e, on="Fecha", suffixes=("", "_mov"))
+    cerca = cerca[(cerca.Importe - cerca.Importe_mov).abs().round(2) <= TOLERANCIA]
+    cerca = cerca[~(cerca.Columna.isin(COLS_MP) & (cerca.Fuente != "MP"))]
+    n_r = cerca.groupby("_r").size()
+    n_e = cerca.groupby("_e").size()
+    cerca = cerca[cerca._r.map(n_r).eq(1) & cerca._e.map(n_e).eq(1)]
+    if len(cerca):
+        rec.loc[rec._r.isin(cerca._r), "Estado"] = "Conciliado"
+        ext.loc[ext._e.isin(cerca._e), "Estado"] = "Conciliado"
+        cerca = cerca.drop(columns=["Estado", "Estado_mov"])
+        cerca["Apareo"] = "Diferencia hasta $0,99"
+        unicos = pd.concat([unicos, cerca], ignore_index=True)
+    unicos["Importe mov"] = unicos.Importe_mov.fillna(unicos.Importe) if "Importe_mov" in unicos else unicos.Importe
+    unicos["Diferencia"] = (unicos["Importe mov"] - unicos.Importe).round(2)
     return rec, ext, unicos
 
 
@@ -248,7 +271,8 @@ def hoja_revisar(rec, ext):
 def armar_salida(rec, ext, unicos, desde, hasta, archivos):
     conc = unicos.rename(columns={"Referencia": "Referencia mov", "Detalle": "Detalle mov"})
     conc = conc[["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna",
-                 "Tipo Asiento", "Fuente", "Referencia mov", "Detalle mov", "Terminal / Caja"]]
+                 "Tipo Asiento", "Fuente", "Importe mov", "Diferencia", "Referencia mov",
+                 "Detalle mov", "Terminal / Caja"]]
     conc = conc.sort_values(["Fecha", "Nro Recibo"])
 
     revisar = hoja_revisar(rec, ext)
@@ -259,7 +283,8 @@ def armar_salida(rec, ext, unicos, desde, hasta, archivos):
            ["Procesado", datetime.now().strftime("%d/%m/%Y %H:%M"), "", ""],
            ["Regla 1", "Par directo: misma fecha + mismo importe exacto, único de ambos lados", "", ""],
            ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos", "", ""],
-           ["", "En las dos, TVIR solo se cruza contra Mercado Pago", "", ""],
+           ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados", "", ""],
+           ["", "En las tres, TVIR solo se cruza contra Mercado Pago", "", ""],
            ["", "", "", ""],
            ["RECIBOS", "Líneas", "Importe", ""]]
     for col in COLS_TARJETA + COLS_MP:
@@ -281,7 +306,9 @@ def armar_salida(rec, ext, unicos, desde, hasta, archivos):
         res.append([estado, len(g), round(g.Importe.sum(), 2), len(h)])
         if estado == "Conciliado":
             for etiqueta, sel in [("   por par directo (regla 1)", unicos.Apareo == "Par directo"),
-                                  ("   por grupo que cierra (regla 2)", unicos.Apareo != "Par directo")]:
+                                  ("   por grupo que cierra (regla 2)", unicos.Apareo.str.startswith("Grupo")),
+                                  ("   por diferencia de hasta $0,99 (regla 3)",
+                                   unicos.Apareo == "Diferencia hasta $0,99")]:
                 g = unicos[sel]
                 res.append([etiqueta, len(g), round(g.Importe.sum(), 2), len(g)])
     g = rec[rec.Estado.str.startswith("Sin")]

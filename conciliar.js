@@ -9,7 +9,10 @@
  *      y se concilia en bloque. El apareo dentro del grupo es por orden de carga
  *      (todos son del mismo día y del mismo importe): el total del grupo está
  *      verificado, el par individual no.
- *   En ambas, las columnas "solo MP" (videoconsultas) solo se cruzan contra
+ *   3. Diferencia de centavos: sobre lo que quedó sin conciliar, misma FECHA y
+ *      una diferencia de importe de hasta $0,99 en cualquier dirección, siempre
+ *      que sea única de los dos lados (el QR redondea al peso entero).
+ *   En las tres, las columnas "solo MP" (videoconsultas) solo se cruzan contra
  *   Mercado Pago; un grupo que empata en cantidad pero no tiene suficientes
  *   movimientos de MP para sus videoconsultas NO cierra. Todo lo demás queda
  *   para revisión manual.
@@ -27,6 +30,8 @@
   };
 
   const MODO_PAR = "Par directo";
+  const MODO_TOL = "Diferencia hasta $0,99";
+  const TOLERANCIA = 99; // centavos
 
   // ------------------------------------------------------------ utilidades
   const cents = (v) => Math.round(Number(v) * 100);
@@ -223,6 +228,35 @@
         pares.push([recibos[i], movs[j], modo]);
       });
     }
+
+    // regla 3: misma fecha y diferencia de hasta 99 centavos, única de los dos
+    // lados, sobre lo que quedó sin conciliar por las reglas 1 y 2
+    const porFecha = new Map();
+    movs.forEach((m, j) => {
+      if (m.estado === "Conciliado") return;
+      if (!porFecha.has(m.fecha)) porFecha.set(m.fecha, []);
+      porFecha.get(m.fecha).push(j);
+    });
+    const candTol = new Map();
+    const invTol = new Map();
+    recibos.forEach((r, i) => {
+      if (r.estado === "Conciliado") return;
+      const js = (porFecha.get(r.fecha) || []).filter((j) =>
+        Math.abs(r.importe - movs[j].importe) <= TOLERANCIA &&
+        (!cfg.colsSoloMP.includes(r.columna) || movs[j].fuente === "MP"));
+      candTol.set(i, js);
+      js.forEach((j) => {
+        if (!invTol.has(j)) invTol.set(j, []);
+        invTol.get(j).push(i);
+      });
+    });
+    for (const [i, js] of candTol) {
+      if (js.length !== 1 || invTol.get(js[0]).length !== 1) continue;
+      const j = js[0];
+      recibos[i].estado = movs[j].estado = "Conciliado";
+      recibos[i].modo = movs[j].modo = MODO_TOL;
+      pares.push([recibos[i], movs[j], MODO_TOL]);
+    }
     return pares;
   }
 
@@ -293,7 +327,10 @@
 
   function resumir(recibos, movs, cfg, desde, hasta) {
     const est = (arr, e) => arr.filter((x) => x.estado === e);
-    const porModo = (arr, grupo) => est(arr, "Conciliado").filter((x) => (x.modo !== MODO_PAR) === !!grupo);
+    const porModo = (f) => {
+      const g = est(recibos, "Conciliado").filter(f);
+      return { rec: g.length, importe: suma(g) };
+    };
     return {
       desde, hasta,
       recibosPorColumna: [...cfg.colsTarjeta, ...cfg.colsSoloMP]
@@ -307,11 +344,12 @@
       totRecibos: { cant: recibos.length, importe: suma(recibos) },
       totMovs: { cant: movs.length, importe: suma(movs) },
       conciliado: { rec: est(recibos, "Conciliado").length, mov: est(movs, "Conciliado").length,
-                    importe: suma(est(recibos, "Conciliado")) },
-      porPar: { rec: porModo(recibos).length, importe: suma(porModo(recibos)) },
-      porGrupo: { rec: porModo(recibos, true).length, importe: suma(porModo(recibos, true)),
-                  grupos: new Set(est(recibos, "Conciliado").filter((r) => r.modo !== MODO_PAR)
-                    .map((r) => `${r.fecha}|${r.importe}`)).size },
+                    importe: suma(est(recibos, "Conciliado")), importeMov: suma(est(movs, "Conciliado")) },
+      porPar: porModo((x) => x.modo === MODO_PAR),
+      porGrupo: Object.assign(porModo((x) => String(x.modo).startsWith("Grupo")), {
+        grupos: new Set(est(recibos, "Conciliado").filter((r) => String(r.modo).startsWith("Grupo"))
+          .map((r) => `${r.fecha}|${r.importe}`)).size }),
+      porTolerancia: porModo((x) => x.modo === MODO_TOL),
       revisar: { rec: est(recibos, "Para revisar").length, mov: est(movs, "Para revisar").length,
                  importe: suma(est(recibos, "Para revisar")), importeMov: suma(est(movs, "Para revisar")) },
       recSinMov: { cant: est(recibos, "Sin movimiento").length, importe: suma(est(recibos, "Sin movimiento")) },
@@ -369,7 +407,8 @@
       ["Procesado", new Date().toLocaleString("es-AR")],
       ["Regla 1", "Par directo: misma fecha + mismo importe exacto, único de ambos lados"],
       ["Regla 2", "Grupo que cierra: misma fecha + mismo importe, igual cantidad de recibos que de movimientos"],
-      ["", `En las dos, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
+      ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados"],
+      ["", `En las tres, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
       [],
       ["RECIBOS", "Líneas", "Importe"],
       ...R.recibosPorColumna.map((x) => [x.columna, x.cant, pesos(x.importe)]),
@@ -383,6 +422,7 @@
       ["Conciliado", R.conciliado.rec, pesos(R.conciliado.importe), R.conciliado.mov],
       ["   por par directo (regla 1)", R.porPar.rec, pesos(R.porPar.importe), R.porPar.rec],
       [`   por grupo que cierra (regla 2, ${R.porGrupo.grupos} grupos)`, R.porGrupo.rec, pesos(R.porGrupo.importe), R.porGrupo.rec],
+      ["   por diferencia de hasta $0,99 (regla 3)", R.porTolerancia.rec, pesos(R.porTolerancia.importe), R.porTolerancia.rec],
       ["Para revisar", R.revisar.rec, pesos(R.revisar.importe), R.revisar.mov],
       ["Recibos sin movimiento", R.recSinMov.cant, pesos(R.recSinMov.importe), ""],
       ["Movimientos sin recibo", "", pesos(R.movSinRec.importe), R.movSinRec.cant],
@@ -402,10 +442,12 @@
       .slice()
       .sort((a, b) => (a[0].fecha + a[0].nroRecibo).localeCompare(b[0].fecha + b[0].nroRecibo))
       .map(([r, m, modo]) => [f(r.fecha), pesos(r.importe), modo, Number(r.nroRecibo), r.cliente, r.cajero, r.columna,
-                              r.tipoAsiento, m.fuente, m.referencia, m.detalle, m.terminal]);
+                              r.tipoAsiento, m.fuente, pesos(m.importe), pesos(m.importe - r.importe),
+                              m.referencia, m.detalle, m.terminal]);
     XLSX.utils.book_append_sheet(wb, hoja(
       ["Fecha", "Importe", "Apareo", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente",
-       "Referencia mov", "Detalle mov", "Terminal / Caja"], conc, { importes: [1], fechas: [0] }), "Conciliados");
+       "Importe mov", "Diferencia", "Referencia mov", "Detalle mov", "Terminal / Caja"], conc,
+      { importes: [1, 9, 10], fechas: [0] }), "Conciliados");
 
     // Para revisar: agrupado por fecha + importe
     const rr = recibos.filter((x) => x.estado === "Para revisar");

@@ -267,11 +267,12 @@
       <summary><span class="num">III.</span><h2>Cómo concilia</h2><span class="mas">+</span></summary>
       <div class="cuerpo">
         <div class="regla">
-          <p class="cita">Misma fecha y mismo importe exacto. Concilia cuando la correspondencia es unívoca, sea de a uno o de a grupo.</p>
+          <p class="cita">Misma fecha. Concilia cuando la correspondencia es unívoca: de a uno, de a grupo, o con una diferencia de centavos.</p>
           <p><b>1. Par directo.</b> Hay <b>un único</b> movimiento con la fecha e importe del recibo, y ese movimiento no coincide con ningún otro recibo.</p>
-          <p><b>2. Grupo que cierra.</b> Dentro de una misma fecha e importe, la cantidad de recibos es <b>exactamente igual</b> a la de movimientos: el grupo cierra, no sobra ni falta nada, y se concilia en bloque. El apareo dentro del grupo va por orden de carga; lo verificado es el total del grupo, no el par uno por uno. La columna <b>Apareo</b> del Excel dice de cuál de las dos reglas salió cada fila.</p>
-          <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
-          <p>No hay desempates, tolerancias ni ventanas de días. Si las cantidades no coinciden, va a <b>Para revisar</b>. Si no aparece ningún candidato, queda como pendiente.</p>
+          <p><b>2. Grupo que cierra.</b> Dentro de una misma fecha e importe, la cantidad de recibos es <b>exactamente igual</b> a la de movimientos: el grupo cierra, no sobra ni falta nada, y se concilia en bloque. El apareo dentro del grupo va por orden de carga; lo verificado es el total del grupo, no el par uno por uno. La columna <b>Apareo</b> del Excel dice de cuál de las tres reglas salió cada fila.</p>
+          <p><b>3. Diferencia de centavos.</b> Sobre lo que quedó sin conciliar por las dos anteriores: misma fecha y una diferencia de importe de <b>hasta $0,99</b> en cualquier dirección, siempre que haya <b>un solo</b> movimiento dentro de ese margen y ese movimiento no le sirva a ningún otro recibo. Es el caso del QR, que redondea al peso entero. El Excel muestra el importe del movimiento y la diferencia en cada fila.</p>
+          <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago en las tres reglas, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
+          <p>No hay desempates ni ventanas de días, y la diferencia de importe no puede pasar de $0,99. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
         </div>
         <div class="cfg">
           <label>Columnas de tarjeta / QR
@@ -284,11 +285,11 @@
     </details>
   </section>
 
-  <footer><span>Conciliación de cobros · v3</span><span>Procesamiento local en el navegador</span></footer>
+  <footer><span>Conciliación de cobros · v4</span><span>Procesamiento local en el navegador</span></footer>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=3"></script>
+<script src="conciliar.js?v=4"></script>
 <script>
 (function () {
   "use strict";
@@ -425,14 +426,14 @@
     const R = r.resultado;
     $("periodo").textContent = `${fecha(R.desde)} — ${fecha(R.hasta)}`;
     $("kpis").innerHTML =
-      cifra("ok", R.conciliado.rec, "Conciliados", `${plata(R.conciliado.importe)}<br>${R.porPar.rec} directos · ${R.porGrupo.rec} en grupo`) +
+      cifra("ok", R.conciliado.rec, "Conciliados", `${plata(R.conciliado.importe)}<br>${R.porPar.rec} directos · ${R.porGrupo.rec} en grupo · ${R.porTolerancia.rec} por centavos`) +
       cifra("rev", R.revisar.rec, "Para revisar", `${plata(R.revisar.importe)}<br>${R.revisar.mov} movimientos`) +
       cifra("bad", R.recSinMov.cant, "Recibos sin movimiento", plata(R.recSinMov.importe)) +
       cifra("bad", R.movSinRec.cant, "Movimientos sin recibo", plata(R.movSinRec.importe));
 
     $("barras").innerHTML =
       barra("Recibos", [["b-ok", R.conciliado.importe], ["b-rev", R.revisar.importe], ["b-bad", R.recSinMov.importe]], R.totRecibos.importe) +
-      barra("Movimientos", [["b-ok", R.conciliado.importe], ["b-rev", R.revisar.importeMov], ["b-bad", R.movSinRec.importe]], R.totMovs.importe);
+      barra("Movimientos", [["b-ok", R.conciliado.importeMov], ["b-rev", R.revisar.importeMov], ["b-bad", R.movSinRec.importe]], R.totMovs.importe);
 
     $("avisos").innerHTML = r.avisos.map((a) => `<li>${esc(a)}</li>`).join("");
 
