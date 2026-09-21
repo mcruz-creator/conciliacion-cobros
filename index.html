@@ -6,7 +6,7 @@
 <title>Conciliación de cobros</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..800;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..700;1,8..60,300..600&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --papel: #f4efe4;
@@ -22,7 +22,7 @@
     --lacre: #a33a2b;
     --lacre-claro: #f0d6cf;
    
-    --serif: "Fraunces", Georgia, serif;
+    --serif: "Source Serif 4", Georgia, serif;
     --sans: "Instrument Sans", "Segoe UI", sans-serif;
     --mono: "IBM Plex Mono", Consolas, monospace;
   }
@@ -88,9 +88,9 @@
   .membrete { display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
               border-bottom: 1px solid var(--tinta); padding-bottom: 8px;
               font: 500 11px/1 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--tinta-suave); }
-  h1 { font: 350 clamp(40px, 8vw, 76px)/.95 var(--serif); font-variation-settings: "opsz" 144, "SOFT" 30;
-       letter-spacing: -.025em; margin: 28px 0 0; }
-  h1 em { font-style: italic; font-weight: 300; color: var(--verde); }
+  h1 { font: 600 clamp(40px, 8vw, 72px)/1 var(--serif); font-variation-settings: "opsz" 60;
+       letter-spacing: -.02em; margin: 28px 0 0; }
+  h1 em { font-style: italic; font-weight: 400; color: var(--verde); }
   .bajada { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end;
             margin: 20px 0 48px; padding-bottom: 20px; border-bottom: 3px double var(--tinta); }
   .bajada p { margin: 0; max-width: 52ch; color: var(--tinta-suave); }
@@ -101,7 +101,7 @@
   .seccion { margin-bottom: 44px; }
   .rotulo { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; }
   .rotulo .num { font: italic 400 30px/1 var(--serif); color: var(--verde); min-width: 1.4em; }
-  .rotulo h2 { font: 500 22px/1.2 var(--serif); margin: 0; letter-spacing: -.01em; }
+  .rotulo h2 { font: 600 22px/1.2 var(--serif); margin: 0; letter-spacing: -.01em; }
   .rotulo .extra { margin-left: auto; font: 13px var(--mono); color: var(--tinta-suave); }
 
   /* zona para soltar */
@@ -156,7 +156,7 @@
   .cifra { padding: 18px 16px 18px 0; border-bottom: 1px solid var(--renglon); animation: aparecer .5s ease both; }
   .cifra + .cifra { padding-left: 16px; border-left: 1px solid var(--renglon); }
   .cifra:nth-child(2) { animation-delay: .07s; } .cifra:nth-child(3) { animation-delay: .14s; } .cifra:nth-child(4) { animation-delay: .21s; }
-  .cifra .n { font: 400 54px/1 var(--serif); font-variation-settings: "opsz" 144; letter-spacing: -.03em; font-variant-numeric: lining-nums; }
+  .cifra .n { font: 400 54px/1 var(--serif); font-variation-settings: "opsz" 60; letter-spacing: -.03em; font-variant-numeric: lining-nums; }
   .cifra .t { font: 600 12px/1.3 var(--sans); letter-spacing: .08em; text-transform: uppercase; margin-top: 10px; }
   .cifra .d { font: 13px/1.4 var(--mono); color: var(--tinta-suave); margin-top: 4px; }
   .cifra.ok .n, .cifra.ok .t { color: var(--verde); }
@@ -199,7 +199,7 @@
   summary { list-style: none; cursor: pointer; padding: 16px 0; display: flex; align-items: baseline; gap: 14px; }
   summary::-webkit-details-marker { display: none; }
   summary .num { font: italic 400 30px/1 var(--serif); color: var(--verde); min-width: 1.4em; }
-  summary h2 { font: 500 22px/1.2 var(--serif); margin: 0; }
+  summary h2 { font: 600 22px/1.2 var(--serif); margin: 0; }
   summary .mas { margin-left: auto; font: 300 26px/1 var(--serif); transition: transform .25s; }
   details[open] summary .mas { transform: rotate(45deg); }
   .cuerpo { padding: 0 0 22px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; }
