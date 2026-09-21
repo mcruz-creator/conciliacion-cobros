@@ -276,7 +276,7 @@
           <p><b>5. Pagador Grupo Oroño.</b> Antes de conciliar se apartan los movimientos cuyo campo <b>Pagador</b> es Grupo Oroño: los hace la empresa, no salen de un recibo de caja. Se miran solo los caracteres que siguen a «Pagador:»; el texto «Producto de Grupooroño», que aparece en cobros de pacientes reales, <b>no</b> excluye nada. Van a la hoja <b>Pagador Grupo Oroño</b> del Excel y al renglón del Resumen, y no cuentan en el total de movimientos.</p>
           <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago en las tres primeras reglas, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
           <p>No hay desempates ni ventanas de días, y la diferencia de importe no puede pasar de $0,99. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
-          <p>Todo lo que queda pendiente —lo de <b>Para revisar</b>, los recibos sin movimiento y los movimientos sin recibo— va además junto en la hoja <b>Hoja de trabajo</b> del Excel, agrupado por fecha e importe y con las mismas columnas, para revisarlo de una sola pasada.</p>
+          <p>Todo lo que queda pendiente —lo de <b>Para revisar</b>, los recibos sin movimiento y los movimientos sin recibo— va además junto en la hoja <b>Hoja de trabajo</b> del Excel, agrupado por fecha e importe y con las mismas columnas, para revisarlo de una sola pasada. En las dos hojas el importe del recibo y el del movimiento van en columnas separadas, para poder sumar cada lado por su cuenta.</p>
         </div>
         <div class="cfg">
           <label>Columnas de tarjeta / QR
@@ -293,7 +293,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=7"></script>
+<script src="conciliar.js?v=8"></script>
 <script>
 (function () {
   "use strict";

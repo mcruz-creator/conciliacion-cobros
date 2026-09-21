@@ -551,28 +551,30 @@
         const [fe, imp] = k.split("|");
         const gr = rr.filter((x) => x.fecha === fe && String(x.importe) === imp);
         const gm = mr.filter((x) => x.fecha === fe && String(x.importe) === imp);
-        const base = [n + 1, f(fe), pesos(Number(imp)), gr.length, gm.length];
-        gr.forEach((x) => { filas.push([...est(x, "Recibo sin movimiento"), ...base, "Recibo", Number(x.nroRecibo), x.cliente, x.cajero, x.columna, x.tipoAsiento, "", "", "", ""]); grupoDeFila.push(n + 1); });
-        gm.forEach((x) => { filas.push([...est(x, "Movimiento sin recibo"), ...base, "Movimiento", "", "", "", "", "", x.fuente, x.referencia, x.detalle, x.terminal]); grupoDeFila.push(n + 1); });
+        // el importe va en la columna del lado que corresponde, para poder sumar cada uno por separado
+        const base = (lado) => [n + 1, f(fe), lado === "Recibo" ? pesos(Number(imp)) : "",
+                                lado === "Movimiento" ? pesos(Number(imp)) : "", gr.length, gm.length];
+        gr.forEach((x) => { filas.push([...est(x, "Recibo sin movimiento"), ...base("Recibo"), "Recibo", Number(x.nroRecibo), x.cliente, x.cajero, x.columna, x.tipoAsiento, "", "", "", ""]); grupoDeFila.push(n + 1); });
+        gm.forEach((x) => { filas.push([...est(x, "Movimiento sin recibo"), ...base("Movimiento"), "Movimiento", "", "", "", "", "", x.fuente, x.referencia, x.detalle, x.terminal]); grupoDeFila.push(n + 1); });
       });
       return { filas, grupoDeFila };
     }
 
-    const COLS_REV = ["Grupo", "Fecha", "Importe", "Cant. recibos", "Cant. movimientos", "Lado", "Nro Recibo",
-                      "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente", "Referencia", "Detalle",
-                      "Terminal / Caja"];
+    const COLS_REV = ["Grupo", "Fecha", "Importe recibo", "Importe movimiento", "Cant. recibos",
+                      "Cant. movimientos", "Lado", "Nro Recibo", "Cliente", "Cajero", "Columna",
+                      "Tipo Asiento", "Fuente", "Referencia", "Detalle", "Terminal / Caja"];
 
     // Hoja de trabajo: todo lo pendiente junto (para revisar + lo que no tiene contrapartida)
     const tra = agrupado(recibos.filter((x) => x.estado !== "Conciliado"),
                          movs.filter((x) => x.estado !== "Conciliado"), true);
     XLSX.utils.book_append_sheet(wb, hoja(["Estado", ...COLS_REV], tra.filas,
-      { importes: [3], fechas: [2], relleno: (r) => tra.grupoDeFila[r] % 2 === 0 }), "Hoja de trabajo");
+      { importes: [3, 4], fechas: [2], relleno: (r) => tra.grupoDeFila[r] % 2 === 0 }), "Hoja de trabajo");
 
     // Para revisar: agrupado por fecha + importe
     const rev = agrupado(recibos.filter((x) => x.estado === "Para revisar"),
                          movs.filter((x) => x.estado === "Para revisar"), false);
     XLSX.utils.book_append_sheet(wb, hoja(COLS_REV, rev.filas,
-      { importes: [2], fechas: [1], relleno: (r) => rev.grupoDeFila[r] % 2 === 0 }), "Para revisar");
+      { importes: [2, 3], fechas: [1], relleno: (r) => rev.grupoDeFila[r] % 2 === 0 }), "Para revisar");
 
     // Pendientes
     const rs = recibos.filter((x) => x.estado === "Sin movimiento")

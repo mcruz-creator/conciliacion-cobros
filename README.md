@@ -24,6 +24,7 @@ presentados a Payway, las transferencias QR de Payway y Mercado Pago.
 - Salida: Excel con Resumen, Conciliados, Anulados, Pagador Grupo Oroño, Hoja de trabajo, Para revisar,
   Recibos sin movimiento y Movimientos sin recibo. La **Hoja de trabajo** junta todo lo pendiente
   (las tres últimas hojas) agrupado por fecha e importe, con las columnas de "Para revisar" y una
-  columna "Estado" que dice de cuál de las tres viene cada fila.
+  columna "Estado" que dice de cuál de las tres viene cada fila. En ambas hojas el importe del
+  recibo y el del movimiento van en columnas separadas, para poder sumar cada lado por su cuenta.
 
 `conciliar.py` es la versión de escritorio (Python) con las mismas reglas.

@@ -294,9 +294,9 @@ def netear(rec):
 # ---------------------------------------------------------------- salida
 COLS_REC = ["Fecha", "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Importe"]
 COLS_EXT = ["Fuente", "Fecha", "Importe", "Referencia", "Detalle", "Terminal / Caja"]
-COLS_REV = ["Grupo", "Fecha", "Importe", "Cant. recibos", "Cant. movimientos", "Lado",
-            "Nro Recibo", "Cliente", "Cajero", "Columna", "Tipo Asiento", "Fuente",
-            "Referencia", "Detalle", "Terminal / Caja"]
+COLS_REV = ["Grupo", "Fecha", "Importe recibo", "Importe movimiento", "Cant. recibos",
+            "Cant. movimientos", "Lado", "Nro Recibo", "Cliente", "Cajero", "Columna",
+            "Tipo Asiento", "Fuente", "Referencia", "Detalle", "Terminal / Caja"]
 
 
 def hoja_grupos(r, e, con_estado=False):
@@ -306,16 +306,18 @@ def hoja_grupos(r, e, con_estado=False):
     for n, (f, imp) in enumerate(grupos, 1):
         gr = r[(r.Fecha == f) & (r.Importe == imp)]
         ge = e[(e.Fecha == f) & (e.Importe == imp)]
-        base = {"Grupo": n, "Fecha": f, "Importe": imp,
-                "Cant. recibos": len(gr), "Cant. movimientos": len(ge)}
+        # el importe va en la columna del lado que corresponde, para sumar cada uno por separado
+        base = {"Grupo": n, "Fecha": f, "Cant. recibos": len(gr), "Cant. movimientos": len(ge)}
         for _, x in gr.iterrows():
             est = {"Estado": x.Estado if x.Estado == "Para revisar" else "Recibo sin movimiento"} if con_estado else {}
-            filas.append({**est, **base, "Lado": "Recibo", "Nro Recibo": x["Nro Recibo"],
+            filas.append({**est, **base, "Importe recibo": imp,
+                          "Lado": "Recibo", "Nro Recibo": x["Nro Recibo"],
                           "Cliente": x.Cliente, "Cajero": x.Cajero, "Columna": x.Columna,
                           "Tipo Asiento": x["Tipo Asiento"]})
         for _, x in ge.iterrows():
             est = {"Estado": x.Estado if x.Estado == "Para revisar" else "Movimiento sin recibo"} if con_estado else {}
-            filas.append({**est, **base, "Lado": "Movimiento", "Fuente": x.Fuente,
+            filas.append({**est, **base, "Importe movimiento": imp,
+                          "Lado": "Movimiento", "Fuente": x.Fuente,
                           "Referencia": x.Referencia, "Detalle": x.Detalle,
                           "Terminal / Caja": x["Terminal / Caja"]})
     cols = (["Estado"] if con_estado else []) + COLS_REV
