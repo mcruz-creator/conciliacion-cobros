@@ -19,6 +19,8 @@ presentados a Payway, las transferencias QR de Payway y Mercado Pago.
   5. **Pagador Grupo Oroño**: antes de conciliar se apartan los movimientos cuyo campo
      "Pagador:" es Grupo Oroño, porque los hace la empresa y no salen de un recibo. Solo se
      mira el pagador: el texto "Producto de Grupooroño" no excluye nada.
+  6. **Videoconsulta**: un movimiento cuyo detalle dice "Videoconsulta médica" solo concilia contra un
+     recibo TVIR, nunca contra uno de mostrador, aunque la fecha y el importe coincidan.
   En las tres primeras, TVIR solo se cruza contra MP. Lo que no cierra queda en "Para revisar".
   La columna "Apareo" del Excel indica de cuál de las tres primeras reglas salió cada fila.
 - Salida: Excel con Resumen, Conciliados, Anulados, Pagador Grupo Oroño, Hoja de trabajo, Para revisar,

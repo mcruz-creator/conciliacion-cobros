@@ -22,6 +22,9 @@
  *      hace la empresa, no salen de un recibo de caja. Se apartan ANTES de
  *      conciliar y se informan aparte. Solo se mira el pagador: "Producto de
  *      Grupooroño" aparece en cobros de pacientes reales y NO los excluye.
+ *   6. Videoconsulta: un movimiento cuyo detalle dice "Videoconsulta médica" solo
+ *      puede conciliar contra un recibo de una columna "solo MP" (TVIR). Nunca
+ *      contra un recibo de mostrador, aunque la fecha y el importe coincidan.
  *   En las tres primeras, las columnas "solo MP" (videoconsultas) solo se cruzan contra
  *   Mercado Pago; un grupo que empata en cantidad pero no tiene suficientes
  *   movimientos de MP para sus videoconsultas NO cierra. Todo lo demás queda
@@ -47,6 +50,19 @@
 
   // ------------------------------------------------------------ utilidades
   const sinAcentos = (s) => String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+  /** regla 6: ¿el movimiento es una videoconsulta? Solo puede ir contra un recibo virtual. */
+  function esVideoconsulta(m) {
+    return sinAcentos(m.detalle).includes("videoconsulta");
+  }
+
+  /** ¿este recibo y este movimiento pueden llegar a ser el mismo cobro? */
+  function compatible(r, m, cfg) {
+    const virtual = cfg.colsSoloMP.includes(r.columna);
+    if (virtual && m.fuente !== "MP") return false;       // las videoconsultas se cobran solo por MP
+    if (!virtual && esVideoconsulta(m)) return false;     // y un cobro de videoconsulta no es de mostrador
+    return true;
+  }
 
   /** regla 5: ¿el movimiento lo pagó la propia empresa? Solo mira el campo "Pagador:". */
   function pagadorPropio(m) {
@@ -199,7 +215,7 @@
 
     // todos los pares posibles recibo-movimiento
     const candRec = recibos.map((r) =>
-      (porClave.get(clave(r)) || []).filter((j) => !cfg.colsSoloMP.includes(r.columna) || movs[j].fuente === "MP"));
+      (porClave.get(clave(r)) || []).filter((j) => compatible(r, movs[j], cfg)));
     const candMov = movs.map(() => []);
     candRec.forEach((js, i) => js.forEach((j) => candMov[j].push(i)));
 
@@ -237,12 +253,17 @@
       // al menos tantos movimientos de MP como recibos "solo MP"
       const soloMp = g.rec.filter((i) => cfg.colsSoloMP.includes(recibos[i].columna));
       const resto = g.rec.filter((i) => !cfg.colsSoloMP.includes(recibos[i].columna));
-      const mp = g.mov.filter((j) => movs[j].fuente === "MP");
-      const otros = g.mov.filter((j) => movs[j].fuente !== "MP");
-      if (soloMp.length > mp.length) continue;
-      // primero las videoconsultas contra MP; el resto, en orden de carga
+      const video = g.mov.filter((j) => esVideoconsulta(movs[j]) && movs[j].fuente === "MP");
+      const mp = g.mov.filter((j) => movs[j].fuente === "MP" && !esVideoconsulta(movs[j]));
+      const otros = g.mov.filter((j) => movs[j].fuente !== "MP" && !esVideoconsulta(movs[j]));
+      // una videoconsulta que no sea de MP no puede aparear con nada: el grupo no cierra
+      if (g.mov.length !== video.length + mp.length + otros.length) continue;
+      if (video.length > soloMp.length) continue;         // regla 6: solo entran en recibos virtuales
+      if (soloMp.length > video.length + mp.length) continue;
+      // primero las videoconsultas, después el resto de MP; lo demás, en orden de carga
+      const huecos = soloMp.length - video.length;
       const izq = [...soloMp, ...resto];
-      const der = [...mp.slice(0, soloMp.length), ...otros, ...mp.slice(soloMp.length)];
+      const der = [...video, ...mp.slice(0, huecos), ...otros, ...mp.slice(huecos)];
       const modo = `Grupo de ${izq.length}`;
       izq.forEach((i, p) => {
         const j = der[p];
@@ -265,8 +286,7 @@
     recibos.forEach((r, i) => {
       if (r.estado === "Conciliado") return;
       const js = (porFecha.get(r.fecha) || []).filter((j) =>
-        Math.abs(r.importe - movs[j].importe) <= TOLERANCIA &&
-        (!cfg.colsSoloMP.includes(r.columna) || movs[j].fuente === "MP"));
+        Math.abs(r.importe - movs[j].importe) <= TOLERANCIA && compatible(r, movs[j], cfg));
       candTol.set(i, js);
       js.forEach((j) => {
         if (!invTol.has(j)) invTol.set(j, []);
@@ -471,6 +491,7 @@
       ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados"],
       ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe"],
       ["Regla 5", "Pagador Grupo Oroño: los movimientos que paga la empresa se apartan antes de conciliar"],
+      ["Regla 6", "Videoconsulta: un movimiento que dice \"Videoconsulta médica\" solo concilia contra un recibo " + cfg.colsSoloMP.join(", ")],
       ["", `En las tres primeras, ${cfg.colsSoloMP.join(", ")} solo se cruza contra Mercado Pago`],
       [],
       ["RECIBOS", "Líneas", "Importe"],

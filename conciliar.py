@@ -29,6 +29,9 @@ Reglas de conciliación (sin desempates ni tolerancias):
   En las tres primeras, los recibos TVIR (videoconsultas) solo se cruzan contra MP; un
   grupo que empata en cantidad pero no tiene movimientos de MP suficientes para
   sus videoconsultas NO cierra. Todo lo demás queda para revisión manual.
+  6. Videoconsulta: un movimiento cuyo detalle dice "Videoconsulta médica" solo
+     puede conciliar contra un recibo de una columna virtual (TVIR). Nunca contra
+     un recibo de mostrador, aunque la fecha y el importe coincidan.
 
 Uso: dejar los archivos en la carpeta "Entrada" y ejecutar. El resultado queda
 en "Salida/Conciliacion_<desde>_<hasta>.xlsx".
@@ -176,8 +179,11 @@ def conciliar(rec, ext):
     rec["_r"] = rec.index
     ext["_e"] = ext.index
 
+    ext["_video"] = ext.Detalle.map(es_videoconsulta)
+
     pares = rec.merge(ext, on=["Fecha", "Importe"], suffixes=("", "_mov"))
     pares = pares[~(pares.Columna.isin(COLS_MP) & (pares.Fuente != "MP"))]
+    pares = pares[~(~pares.Columna.isin(COLS_MP) & pares._video)]  # regla 6
 
     cand_r = pares.groupby("_r").size()
     cand_e = pares.groupby("_e").size()
@@ -207,12 +213,19 @@ def conciliar(rec, ext):
         # tantos movimientos de MP como recibos TVIR
         solo_mp = [i for i in ridx if rec.at[i, "Columna"] in COLS_MP]
         resto = [i for i in ridx if rec.at[i, "Columna"] not in COLS_MP]
-        mp = [j for j in eidx if ext.at[j, "Fuente"] == "MP"]
-        otros = [j for j in eidx if ext.at[j, "Fuente"] != "MP"]
-        if len(solo_mp) > len(mp):
+        video = [j for j in eidx if ext.at[j, "_video"] and ext.at[j, "Fuente"] == "MP"]
+        mp = [j for j in eidx if ext.at[j, "Fuente"] == "MP" and not ext.at[j, "_video"]]
+        otros = [j for j in eidx if ext.at[j, "Fuente"] != "MP" and not ext.at[j, "_video"]]
+        # una videoconsulta que no sea de MP no aparea con nada: el grupo no cierra
+        if len(eidx) != len(video) + len(mp) + len(otros):
             continue
+        if len(video) > len(solo_mp):  # regla 6: solo entran en recibos virtuales
+            continue
+        if len(solo_mp) > len(video) + len(mp):
+            continue
+        huecos = len(solo_mp) - len(video)
         izq = solo_mp + resto
-        der = mp[:len(solo_mp)] + otros + mp[len(solo_mp):]
+        der = video + mp[:huecos] + otros + mp[huecos:]
         for i, j in zip(izq, der):
             rec.at[i, "Estado"] = "Conciliado"
             ext.at[j, "Estado"] = "Conciliado"
@@ -234,6 +247,7 @@ def conciliar(rec, ext):
     cerca = libre_r.merge(libre_e, on="Fecha", suffixes=("", "_mov"))
     cerca = cerca[(cerca.Importe - cerca.Importe_mov).abs().round(2) <= TOLERANCIA]
     cerca = cerca[~(cerca.Columna.isin(COLS_MP) & (cerca.Fuente != "MP"))]
+    cerca = cerca[~(~cerca.Columna.isin(COLS_MP) & cerca._video)]  # regla 6
     n_r = cerca.groupby("_r").size()
     n_e = cerca.groupby("_e").size()
     cerca = cerca[cerca._r.map(n_r).eq(1) & cerca._e.map(n_e).eq(1)]
@@ -250,6 +264,11 @@ def conciliar(rec, ext):
 
 def sin_acentos(s):
     return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
+
+
+def es_videoconsulta(detalle):
+    """Regla 6: ¿el movimiento es una videoconsulta? Solo va contra un recibo virtual."""
+    return "videoconsulta" in sin_acentos(detalle)
 
 
 def pagador_propio(detalle):
@@ -345,6 +364,7 @@ def armar_salida(rec, ext, unicos, anulados, propios, desde, hasta, archivos):
            ["Regla 3", "Diferencia de centavos: misma fecha + diferencia de hasta $0,99, única de ambos lados", "", ""],
            ["Regla 4", "Neteo de anulaciones: recibo positivo y negativo sin conciliar, misma fecha, mismo cliente e importe", "", ""],
            ["Regla 5", "Pagador Grupo Oroño: los movimientos que paga la empresa se apartan antes de conciliar", "", ""],
+           ["Regla 6", 'Videoconsulta: un movimiento que dice "Videoconsulta médica" solo concilia contra un recibo ' + ", ".join(COLS_MP), "", ""],
            ["", "En las tres primeras, TVIR solo se cruza contra Mercado Pago", "", ""],
            ["", "", "", ""],
            ["RECIBOS", "Líneas", "Importe", ""]]

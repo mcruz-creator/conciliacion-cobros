@@ -274,6 +274,7 @@
           <p><b>3. Diferencia de centavos.</b> Sobre lo que quedó sin conciliar por las dos anteriores: misma fecha y una diferencia de importe de <b>hasta $0,99</b> en cualquier dirección, siempre que haya <b>un solo</b> movimiento dentro de ese margen y ese movimiento no le sirva a ningún otro recibo. Es el caso del QR, que redondea al peso entero. El Excel muestra el importe del movimiento y la diferencia en cada fila.</p>
           <p><b>4. Neteo de anulaciones.</b> Al final, entre los recibos que quedaron <b>sin conciliar</b>: si el mismo día y para el mismo cliente hay uno positivo y uno negativo del mismo importe, se cancelan entre sí y salen del informe, porque esa anulación nunca llegó al procesador. Después se vuelven a correr las tres reglas anteriores sobre lo que quedó. Un recibo negativo que ya concilió contra una devolución real (Payway «Devolución», QR «Devuelto», MP «Devolución de dinero») <b>no</b> se netea nunca. Los pares anulados quedan listados en la hoja <b>Anulados</b> del Excel; el total de recibos del período no cambia, porque cada par suma cero.</p>
           <p><b>5. Pagador Grupo Oroño.</b> Antes de conciliar se apartan los movimientos cuyo campo <b>Pagador</b> es Grupo Oroño: los hace la empresa, no salen de un recibo de caja. Se miran solo los caracteres que siguen a «Pagador:»; el texto «Producto de Grupooroño», que aparece en cobros de pacientes reales, <b>no</b> excluye nada. Van a la hoja <b>Pagador Grupo Oroño</b> del Excel y al renglón del Resumen, y no cuentan en el total de movimientos.</p>
+          <p><b>6. Videoconsulta.</b> Un movimiento cuyo detalle dice «Videoconsulta médica» solo puede conciliar contra un recibo de una columna «solo MP» (TVIR). Nunca contra un recibo de mostrador, aunque la fecha y el importe coincidan: la videoconsulta se cobra antes de facturar y por Mercado Pago. Al revés también: un recibo TVIR no concilia contra un movimiento que no sea de Mercado Pago.</p>
           <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago en las tres primeras reglas, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
           <p>No hay desempates ni ventanas de días, y la diferencia de importe no puede pasar de $0,99. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
           <p>Todo lo que queda pendiente —lo de <b>Para revisar</b>, los recibos sin movimiento y los movimientos sin recibo— va además junto en la hoja <b>Hoja de trabajo</b> del Excel, agrupado por fecha e importe y con las mismas columnas, para revisarlo de una sola pasada. En las dos hojas el importe del recibo y el del movimiento van en columnas separadas, para poder sumar cada lado por su cuenta.</p>
@@ -293,7 +294,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=8"></script>
+<script src="conciliar.js?v=9"></script>
 <script>
 (function () {
   "use strict";
