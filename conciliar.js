@@ -673,7 +673,7 @@
  *   - Impuestos propios del banco (Imp. Déb. y Créd. e IIBB Acreditaciones): no
  *     van, se contabilizan en un asiento mensual aparte. Sí se muestran en el control.
  *   - Transferencias salientes de Mercado Pago (payout): fuera de esta sección.
- *   - Base gravada y exenta van juntas en "gastos bancarios".
+ *   - Base gravada y exenta van juntas en "Gastos bancarios".
  *   - Rendimientos de Mercado Pago: cuenta "Rendimiento Inversiones".
  *
  * Funciona en el navegador (usa window.XLSX y un lector de PDF inyectado) y en
@@ -687,13 +687,13 @@
   // nombres de cuenta tal como los dio el usuario
   const CUENTAS = {
     banco: "Banco Supervielle acreditación tarjeta cuenta corriente",
-    mp: "cobros mercado pago",
-    gastos: "gastos bancarios",
+    mp: "Cobros Mercado Pago",
+    gastos: "Gastos bancarios",
     ivaCf: "IVA CF Bancos",
     retIibb: "ING BRUTOS retenciones",
     retAfip: "IVA retenciones",
-    impDebCred: "impuesto al débito y crédito bancarios",
-    tarjetas: "tarjetas",
+    impDebCred: "Impuesto al Debito y Credito",
+    tarjetas: "Tarjetas",
     rendimiento: "Rendimiento Inversiones",
     sinCuenta: "A DEFINIR — retención o percepción sin cuenta asignada",
   };
