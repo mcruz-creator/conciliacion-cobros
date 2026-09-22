@@ -701,6 +701,8 @@
   // conceptos del extracto Supervielle, tal cual vienen escritos
   const CPT_PRISMA = "Comercios Prisma";
   const CPT_QR = "COBRO CON QR";
+  // el debito con que el banco deshace un cobro con QR: la transferencia se dio vuelta
+  const CPT_DEV = "DEVOLUCION PEI";
   const CPT_IMP_CR = "Impuesto Débitos y Créditos/CR";
   const CPT_IIBB_AC = "IIBB- Acreditaciones Bancarias";
 
@@ -966,7 +968,8 @@
     leerLiquidacionPayway: leerLiquidacionPayway, leerExtracto: leerExtracto, leerQr: leerQr,
     leerLiberaciones: leerLiberaciones, leerResumenMp: leerResumenMp, leerPendientes: leerPendientes,
     CUENTAS: CUENTAS, CAB_PENDIENTES: CAB_PENDIENTES,
-    CPT_PRISMA: CPT_PRISMA, CPT_QR: CPT_QR, CPT_IMP_CR: CPT_IMP_CR, CPT_IIBB_AC: CPT_IIBB_AC,
+    CPT_PRISMA: CPT_PRISMA, CPT_QR: CPT_QR, CPT_DEV: CPT_DEV,
+    CPT_IMP_CR: CPT_IMP_CR, CPT_IIBB_AC: CPT_IIBB_AC,
     filas: filas, objetos: objetos, leerLibro: leerLibro,
     get lectorPdf() { return leerPdf; },
   };
@@ -1047,24 +1050,38 @@
    * cantidad que coincide en ambos lados. No hay desempate posible ni necesario,
    * porque dos movimientos del mismo día por el mismo importe son intercambiables.
    * El sobrante de cualquiera de los dos lados queda pendiente.
+   *
+   * Hay dos bolsas separadas, porque en el extracto un cobro y una devolución
+   * vienen con conceptos distintos: las aprobadas se buscan contra "COBRO CON QR"
+   * y las devueltas contra "DEVOLUCION PEI". Al estar separadas no se pueden
+   * mezclar: una devolución no puede consumir la acreditación de un cobro ni al
+   * revés. Un estado que no sea ninguno de esos dos no se busca contra nada y
+   * queda pendiente, para que un estado nuevo de Payway no se cuele sin que nadie
+   * lo mire.
    */
   function cruzarQr(qr, extracto) {
-    const disponibles = new Map();    // fecha|importe -> filas del banco
-    for (const r of extracto) {
-      if (r.concepto !== L.CPT_QR) continue;
-      const k = r.fecha + "|" + r.importe;
-      if (!disponibles.has(k)) disponibles.set(k, []);
-      disponibles.get(k).push(r);
-    }
+    const bolsa = (concepto) => {       // fecha|importe -> filas del banco
+      const m = new Map();
+      for (const r of extracto) {
+        if (r.concepto !== concepto) continue;
+        const k = r.fecha + "|" + r.importe;
+        if (!m.has(k)) m.set(k, []);
+        m.get(k).push(r);
+      }
+      return m;
+    };
+    const cobros = bolsa(L.CPT_QR), devoluciones = bolsa(L.CPT_DEV);
     const filas = qr.map((r) => {
-      if (r.estado !== "Aprobada") return Object.assign({}, r, { cruza: false, motivo: r.estado });
-      const k = r.fecha + "|" + r.neto;
-      const l = disponibles.get(k);
+      const esCobro = r.estado === "Aprobada", esDev = r.estado === "Devuelto";
+      if (!esCobro && !esDev) return Object.assign({}, r, { cruza: false, motivo: r.estado });
+      const l = (esCobro ? cobros : devoluciones).get(r.fecha + "|" + r.neto);
       if (l && l.length) { l.shift(); return Object.assign({}, r, { cruza: true, motivo: "" }); }
-      return Object.assign({}, r, { cruza: false, motivo: "sin acreditación en el extracto" });
+      return Object.assign({}, r, { cruza: false, motivo: esCobro
+        ? "sin acreditación en el extracto"
+        : "devuelta por Payway, pero el extracto no tiene el débito de la devolución" });
     });
     const huerfanas = [];
-    for (const l of disponibles.values()) for (const r of l) huerfanas.push(r);
+    for (const m of [cobros, devoluciones]) for (const l of m.values()) for (const r of l) huerfanas.push(r);
     return { filas: filas, huerfanas: huerfanas };
   }
 
@@ -1231,8 +1248,12 @@
           retIibb: r.retIibb });
     }
     for (const g of qrCruce.huerfanas) {
-      p({ origen: "Extracto", fecha: g.fecha, clave: "qrext " + g.fecha + "|" + g.importe,
-          concepto: "Cobro con QR acreditado en el extracto sin transferencia que lo respalde: " +
+      const dev = g.concepto === L.CPT_DEV;
+      p({ origen: "Extracto", fecha: g.fecha,
+          clave: (dev ? "qrdev " : "qrext ") + g.fecha + "|" + g.importe,
+          concepto: (dev
+            ? "Devolución debitada en el extracto sin transferencia QR devuelta que la respalde: "
+            : "Cobro con QR acreditado en el extracto sin transferencia que lo respalde: ") +
                     g.detalle + ". Revisión manual.",
           importe: g.importe, contabiliza: false });
     }
@@ -1525,7 +1546,7 @@
       r.cruza ? "cruza" : "NO CRUZA", r.motivo]);
     for (const g of R.qrCruce.huerfanas) {
       cq.push([fx(g.fecha), "", "", "", "", "", "", "", "", "", "", pesos(g.importe),
-               "SOLO EN EL EXTRACTO", g.detalle]);
+               "SOLO EN EL EXTRACTO", g.concepto + ": " + g.detalle]);
     }
     XLSX.utils.book_append_sheet(wb, hoja(
       ["Fecha de venta", "QR ID", "Terminal lógica", "Nro cupón", "Estado", "Bruto", "Arancel",
