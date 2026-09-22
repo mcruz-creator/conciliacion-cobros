@@ -139,19 +139,19 @@
   .rotulo .extra { margin-left: auto; font: 13px var(--mono); color: var(--tinta-suave); }
 
   /* zona para soltar */
-  #zona {
+  .zona {
     position: relative; display: grid; place-items: center; text-align: center; gap: 6px;
     padding: 40px 20px; cursor: pointer; background: var(--hoja);
     border: 1.5px dashed var(--tinta-suave); border-radius: 3px;
     transition: border-color .2s, background .2s, transform .2s;
   }
-  #zona:hover, #zona:focus-visible, #zona.encima { border-color: var(--verde); background: var(--verde-claro); outline: none; }
-  #zona.encima { transform: scale(1.01); }
-  #zona .grande { font: 400 21px/1.3 var(--serif); }
-  #zona .grande u { text-decoration-color: var(--verde); text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
-  #zona .chico { font-size: 13px; color: var(--tinta-suave); }
+  .zona:hover, .zona:focus-visible, .zona.encima { border-color: var(--verde); background: var(--verde-claro); outline: none; }
+  .zona.encima { transform: scale(1.01); }
+  .zona .grande { font: 400 21px/1.3 var(--serif); }
+  .zona .grande u { text-decoration-color: var(--verde); text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
+  .zona .chico { font-size: 13px; color: var(--tinta-suave); }
   .flecha { width: 34px; height: 34px; color: var(--verde); margin-bottom: 4px; transition: transform .3s; }
-  #zona:hover .flecha, #zona.encima .flecha { transform: translateY(3px); }
+  .zona:hover .flecha, .zona.encima .flecha { transform: translateY(3px); }
 
   /* fichas de archivos */
   .fichas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: 18px;
@@ -168,6 +168,12 @@
   .ficha.ok .sello { color: var(--verde); opacity: 1; animation: sellar .35s cubic-bezier(.2,1.6,.4,1); }
   .ficha.ok .tipo { color: var(--verde); }
   .ficha.falta .arch { color: var(--tinta-suave); font-style: italic; font-family: var(--serif); }
+  .fichas.seis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fichas.seis .ficha { border-right: 1px solid var(--renglon); }
+  .fichas.seis .ficha:nth-child(3n) { border-right: 0; }
+  .fichas.seis .ficha:nth-child(-n+3) { border-bottom: 1px solid var(--renglon); }
+  .ficha.opcional .arch { font-style: italic; font-family: var(--serif); }
+  .ficha.duplicada .tipo, .ficha.duplicada .arch { color: var(--lacre); }
   @keyframes sellar { from { transform: rotate(-18deg) scale(1.8); opacity: 0; } to { transform: rotate(-6deg) scale(1); opacity: 1; } }
 
   .ignorados { margin: 12px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--lacre); }
@@ -248,6 +254,11 @@
   .mayor .num { text-align: right; font: 14px var(--mono); font-variant-numeric: tabular-nums; }
   .mayor .grupo td { font: italic 400 15px var(--serif); color: var(--verde); padding-top: 16px; border-bottom-color: var(--tinta-suave); }
   .mayor .col { font: 12px var(--mono); color: var(--tinta-suave); margin-left: 6px; }
+  .mayor tfoot td { font-weight: 600; border-top: 1px solid var(--tinta); border-bottom: 0; padding-top: 13px; }
+  .mayor tfoot .mal { color: var(--lacre); }
+  .mayor caption { caption-side: top; text-align: left; padding: 0 0 10px;
+                   font: 600 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--verde); }
+  .mayor .clave { font: 12.5px var(--mono); color: var(--tinta-suave); display: block; margin-top: 3px; }
 
   .descarga { margin-top: 26px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .descarga .pista { font-family: var(--mono); }
@@ -326,7 +337,7 @@
   <!-- I. Archivos -->
   <section class="seccion entra">
     <div class="rotulo"><span class="num">I.</span><h2>Archivos del período</h2></div>
-    <div id="zona" tabindex="0" role="button" aria-label="Elegir archivos">
+    <div id="zona" class="zona" tabindex="0" role="button" aria-label="Elegir archivos">
       <svg class="flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 3v13M6.5 10.5 12 16l5.5-5.5M4 20h16"/></svg>
       <div class="grande">Soltá acá los cuatro archivos o <u>elegilos de la carpeta</u></div>
       <div class="chico">Se reconocen solos por su contenido: el nombre y el orden no importan.</div>
@@ -409,18 +420,73 @@
       </span>
     </div>
 
+    <!-- I. Archivos -->
     <section class="seccion entra">
-      <div class="rotulo"><span class="num">I.</span><h2>En preparación</h2></div>
-      <div class="pendiente">
-        <h3>Falta ver los archivos del mes</h3>
-        <p>Esta sección todavía no lee nada. Va a tener dos pasos:</p>
-        <ul>
-          <li><b>Paso 1 · Conciliar.</b> Cruzar las liquidaciones contra el resumen: que cada acreditación esté, por la fecha y el importe que corresponde, y que no sobre ni falte ninguna.</li>
-          <li><b>Paso 2 · Contabilizar.</b> Sobre lo que quedó conciliado, armar el asiento con el importe acreditado y cada descuento aplicado —comisiones, IVA, retenciones, percepciones— contra su cuenta contable.</li>
-        </ul>
-        <p>Para armarla hacen falta, una sola vez, un ejemplo de cada archivo del mes. Con eso a la vista se define qué trae cada uno y con qué clave se cruzan, igual que en la otra sección: sin desempates ni tolerancias inventadas.</p>
+      <div class="rotulo"><span class="num">I.</span><h2>Archivos del mes</h2></div>
+      <div id="zonaB" class="zona" tabindex="0" role="button" aria-label="Elegir archivos">
+        <svg class="flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 3v13M6.5 10.5 12 16l5.5-5.5M4 20h16"/></svg>
+        <div class="grande">Soltá acá los cinco archivos del mes o <u>elegilos de la carpeta</u></div>
+        <div class="chico">Se reconocen solos por su contenido. El sexto —la salida de esta misma pantalla el mes pasado— es opcional, y es lo único que arrastra lo que quedó pendiente.</div>
+      </div>
+      <input id="entradaB" type="file" multiple accept=".zip,.pdf,.xls,.xlsx" hidden>
+
+      <div class="fichas seis" id="fichasB"></div>
+      <ul class="ignorados" id="ignoradosB"></ul>
+
+      <div class="acciones">
+        <button class="primario" id="btnProcesarB" disabled>Contabilizar</button>
+        <button class="secundario" id="btnLimpiarB" hidden>Empezar de nuevo</button>
+        <span class="pista" id="pistaProcesarB">Faltan archivos.</span>
+        <span id="estadoProcesoB" role="status" aria-live="polite" class="solo-lectores"></span>
+      </div>
+      <p id="errorB" class="error" hidden></p>
+    </section>
+
+    <!-- II. Control y asiento -->
+    <section class="seccion" id="panelResultadoB" hidden>
+      <div class="rotulo"><span class="num">II.</span><h2>Control y asiento</h2><span class="extra" id="periodoB"></span></div>
+
+      <div class="cifras" id="kpisB"></div>
+
+      <table class="mayor" id="tablaControlB"></table>
+      <table class="mayor" id="tablaAsientoB"></table>
+
+      <div class="barras" id="fueraB"></div>
+
+      <ul class="avisos" id="avisosB"></ul>
+
+      <div class="descarga">
+        <button class="primario" id="btnDescargarB">Descargar Excel</button>
+        <span class="pista" id="nombreSalidaB"></span>
       </div>
     </section>
+
+    <!-- III. Regla -->
+    <section class="seccion entra">
+      <details>
+        <summary><span class="num">III.</span><h2>Cómo contabiliza</h2><span class="mas">+</span></summary>
+        <div class="cuerpo">
+          <div class="regla">
+            <p class="cita">Primero el control, después el asiento. Cada cruce tiene una clave única verificada: no hay desempates, ni tolerancias, ni ventanas de días. Lo que no cruza no se contabiliza: queda pendiente y se arrastra al mes siguiente.</p>
+            <p><b>1. Liquidaciones Payway contra el extracto.</b> La clave es <b>número de establecimiento + fecha de pago</b>. El banco parte la acreditación del día en varios renglones, uno por marca de tarjeta, así que se suman todos los renglones de <i>Comercios Prisma</i> de ese establecimiento y esa fecha y el total tiene que dar <b>exactamente</b> el total del día de la liquidación. La unidad que entra al asiento es el <b>establecimiento completo</b>: si un solo día no cruza, el establecimiento entero queda pendiente, porque los descuentos vienen en una sola cabecera y no se pueden repartir por día.</p>
+            <p><b>2. Transferencias QR contra el extracto.</b> La clave es <b>fecha de venta + importe neto</b>. Una transferencia cruza cuando hay un renglón <i>Cobro con QR</i> de esa fecha y ese importe todavía sin usar. Cuando el mismo día se repite el mismo importe no hace falta desempatar: los renglones son idénticos e intercambiables, y lo verificado es que la cantidad coincide de los dos lados. Lo que no está <i>Aprobada</i> nunca cruza.</p>
+            <p><b>3. Mercado Pago.</b> La clave es el <b>identificador de la operación</b>: el <code>SOURCE_ID</code> de la liberación tiene que aparecer como <code>REFERENCE_ID</code> en el resumen de cuenta. Al asiento entran los cobros (<i>payment</i> y <i>refund</i>) y, en su propia cuenta, los rendimientos (<i>asset_management</i>). Las transferencias salientes quedan fuera del alcance de esta pantalla.</p>
+            <p><b>4. El asiento.</b> Se arma con lo que cruzó y nada más. Al debe: lo acreditado en el banco y en Mercado Pago, más cada descuento contra su cuenta —aranceles y costo financiero en gastos bancarios, el IVA de esos aranceles en IVA CF, las retenciones de ingresos brutos y las percepciones de AFIP—. Al haber: el bruto contra <i>tarjetas</i> y el rendimiento contra <i>Rendimiento Inversiones</i>. Si por cualquier motivo el asiento no cierra, no se corrige nada: sale el aviso y la diferencia queda a la vista.</p>
+            <p><b>5. Lo que no entra.</b> El impuesto al débito y crédito que cobra el banco sobre las acreditaciones y el de ingresos brutos sobre acreditaciones bancarias se muestran aparte: van en el asiento mensual de impuestos, no en éste. Tampoco entra ninguna retención o percepción a la que no se le haya asignado cuenta: esa va a una línea <i>A DEFINIR</i> bien visible, con su aviso.</p>
+            <p><b>6. Pendientes y arrastre.</b> Todo lo que no cruzó queda en la hoja <b>Pendientes</b> del Excel, con su clave y el período en que nació. Ese mismo Excel es el que hay que adjuntar el mes que viene: un pendiente se da por resuelto solo si vuelve a aparecer <b>por su misma clave única</b>, y recién ahí se contabiliza. Los que salen de un movimiento del banco sin documento que lo respalde nunca se contabilizan solos —el documento es el que dice a qué cuentas va— y quedan marcados para revisión manual. Si un pendiente lleva dos períodos o más sin resolverse, sale el aviso.</p>
+          </div>
+          <div class="regla">
+            <p class="cita">Los seis archivos</p>
+            <p><b>Liquidaciones Payway.</b> El ZIP de comprobantes del mes, o los PDF sueltos. De ahí salen el total presentado por día y el desglose de descuentos de cada establecimiento.</p>
+            <p><b>Extracto del banco.</b> El movimiento de la cuenta corriente en Excel. Es el que manda: define el período y es contra el que se controla todo.</p>
+            <p><b>Transferencias QR.</b> El detalle de cobros con QR. Puede traer más de un mes: se usan solo los del período del extracto.</p>
+            <p><b>Liberaciones de Mercado Pago</b> y <b>resumen de cuenta de Mercado Pago</b>. El primero trae el bruto, la comisión y los impuestos de cada operación; el segundo confirma que el dinero entró.</p>
+            <p><b>Salida del mes anterior</b> <i>(opcional)</i>. El Excel que descargaste de esta misma pantalla el mes pasado. Sin él no se arrastra ningún pendiente y sale el aviso.</p>
+          </div>
+        </div>
+      </details>
+    </section>
+
   </div><!-- /vista-bancos -->
 
   <footer><span id="pieSeccion">Conciliación de cobros</span><span>Procesamiento local en el navegador</span></footer>
@@ -428,7 +494,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script src="conciliar.js?v=12"></script>
+<script src="conciliar.js?v=13"></script>
 <script>
 (function () {
   "use strict";
@@ -614,10 +680,10 @@
 
   // cada cifra sube desde cero hasta su valor; arranca con el mismo retardo que su tarjeta
   let generacionCifras = 0;
-  function contarCifras() {
+  function contarCifras(selector) {
     const gen = ++generacionCifras;   // invalida cualquier conteo anterior todavia en vuelo
     if (sinMovimiento()) return;
-    document.querySelectorAll("#kpis .n").forEach((el, i) => {
+    document.querySelectorAll(selector).forEach((el, i) => {
       const fin = Number(el.dataset.n);
       if (!Number.isFinite(fin) || fin <= 0) return;
       const dur = 700, espera = 180 + i * 70;
@@ -696,12 +762,286 @@
     panel.hidden = true;
     void panel.offsetWidth; // reinicia las animaciones
     panel.hidden = false;
-    contarCifras();
+    contarCifras("#kpis .n");
     panel.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   $("btnDescargar").addEventListener("click", () => {
     if (ultimo) XLSX.writeFile(ultimo.libro, ultimo.nombreSalida);
+  });
+
+  // ==================================================================
+  //                    Contabilización en bancos
+  // ==================================================================
+  const Bancos = Conciliador.Bancos;
+  const archivosB = new Map();   // nombre -> {nombre, bytes}
+  let procesandoB = false;       // hay un proceso en curso: el boton no se toca desde afuera
+  let sePuedeB = false;          // lo fija pintarListaB; el boton lo repone al terminar
+  let ultimoB = null;
+
+  // Leer el ZIP y los PDF necesita dos librerias que juntas pasan el mega y medio.
+  // Se bajan recien cuando se aprieta el boton, para no cobrarselas a quien entra
+  // solo a la otra seccion.
+  const CDN_FFLATE = "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js";
+  const CDN_PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+  const CDN_PDFWORKER = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  const bajando = new Map();
+  function bajarScript(url) {
+    if (!bajando.has(url)) {
+      bajando.set(url, new Promise((listo, falla) => {
+        const el = document.createElement("script");
+        el.src = url;
+        el.onload = () => listo();
+        // si fallo, se saca de la lista: el proximo intento vuelve a probar
+        el.onerror = () => { bajando.delete(url); el.remove(); falla(new Error("no se pudo cargar " + url)); };
+        document.head.appendChild(el);
+      }));
+    }
+    return bajando.get(url);
+  }
+  async function librerias() {
+    try {
+      await Promise.all([bajarScript(CDN_FFLATE), bajarScript(CDN_PDFJS)]);
+    } catch (e) {
+      throw new Error("No se pudieron bajar las librerías para leer el ZIP y los PDF. Revisá la conexión y probá de nuevo.");
+    }
+    if (!window.fflate || !window.pdfjsLib) throw new Error("Las librerías para leer el ZIP y los PDF cargaron mal. Recargá la página.");
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = CDN_PDFWORKER;
+  }
+
+  // ---------- carga de archivos
+  const zonaB = $("zonaB");
+  zonaB.addEventListener("click", () => $("entradaB").click());
+  zonaB.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("entradaB").click(); } });
+  zonaB.addEventListener("dragover", (e) => { e.preventDefault(); zonaB.classList.add("encima"); });
+  zonaB.addEventListener("dragleave", () => zonaB.classList.remove("encima"));
+  zonaB.addEventListener("drop", (e) => { e.preventDefault(); zonaB.classList.remove("encima"); agregarB(e.dataTransfer.files); });
+  $("entradaB").addEventListener("change", (e) => { agregarB(e.target.files); e.target.value = ""; });
+
+  async function agregarB(files) {
+    // copia inmediata: el input se vacia apenas arranca esto y la lista original queda en cero
+    const lista = Array.from(files);
+    for (const f of lista) {
+      archivosB.set(f.name, { nombre: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
+    }
+    ocultarResultadoB();
+    pintarListaB();
+  }
+
+  const TIPOS_B = {
+    liqPayway: { nombre: "Liquidaciones Payway", ext: ".zip · .pdf", varios: true },
+    extracto: { nombre: "Extracto del banco", ext: ".xlsx · cuenta corriente" },
+    qr: { nombre: "Transferencias QR", ext: ".xlsx" },
+    libMp: { nombre: "Liberaciones Mercado Pago", ext: ".xlsx" },
+    resumenMp: { nombre: "Resumen cuenta Mercado Pago", ext: ".xlsx" },
+    previo: { nombre: "Mes anterior", ext: ".xlsx · salida de esta pantalla", opcional: true },
+  };
+  const OBLIGATORIOS_B = Object.keys(TIPOS_B).filter((t) => !TIPOS_B[t].opcional);
+
+  function clasificarB() {
+    const porTipo = {};
+    const ignorados = [];
+    for (const a of archivosB.values()) {
+      let tipo = null;
+      try { tipo = Bancos.detectar(a.nombre, a.bytes); } catch (e) { tipo = null; }
+      if (tipo) (porTipo[tipo] = porTipo[tipo] || []).push(a);
+      else ignorados.push(a.nombre);
+    }
+    return { porTipo: porTipo, ignorados: ignorados };
+  }
+
+  function pintarListaB() {
+    const clasificado = clasificarB();
+    const porTipo = clasificado.porTipo;
+    // de cada tipo tiene que haber uno solo, salvo las liquidaciones: ahi pueden
+    // venir el zip entero o los pdf sueltos
+    const duplicados = Object.keys(TIPOS_B).filter((t) => !TIPOS_B[t].varios && (porTipo[t] || []).length > 1);
+
+    $("fichasB").innerHTML = Object.entries(TIPOS_B).map(([t, info]) => {
+      const nombres = (porTipo[t] || []).map((a) => a.nombre);
+      const dup = duplicados.indexOf(t) >= 0;
+      const clase = dup ? "duplicada" : nombres.length ? "ok" : info.opcional ? "opcional" : "falta";
+      return `<div class="ficha ${clase}">
+        <div class="sello">Recibido</div>
+        <div class="tipo">${info.nombre}</div>
+        <div class="ext">${info.ext}</div>
+        <div class="arch">${nombres.length ? nombres.map(esc).join("<br>") : info.opcional ? "sin arrastre" : "pendiente"}</div>
+      </div>`;
+    }).join("");
+    $("ignoradosB").innerHTML =
+      clasificado.ignorados.map((n) => `<li>${esc(n)}: no se reconoce el formato, se va a ignorar</li>`).join("") +
+      duplicados.map((t) => `<li>${TIPOS_B[t].nombre}: hay ${porTipo[t].length} archivos de este tipo y tiene que haber uno solo</li>`).join("");
+
+    const faltan = OBLIGATORIOS_B.filter((t) => !porTipo[t]);
+    sePuedeB = !faltan.length && !duplicados.length;
+    // mientras procesa el boton lo maneja el handler: pintarListaB no lo pisa
+    if (!procesandoB) $("btnProcesarB").disabled = !sePuedeB;
+    $("pistaProcesarB").textContent = duplicados.length
+      ? "Sacá los archivos repetidos para poder seguir."
+      : faltan.length
+        ? `Falta: ${faltan.map((t) => TIPOS_B[t].nombre).join(", ")}.`
+        : porTipo.previo ? "Todo listo." : "Listo, pero sin el Excel del mes anterior no se arrastra ningún pendiente.";
+    $("btnLimpiarB").hidden = archivosB.size === 0;
+  }
+  pintarListaB();
+
+  $("btnLimpiarB").addEventListener("click", () => {
+    archivosB.clear();
+    ocultarResultadoB();
+    pintarListaB();
+  });
+
+  function ocultarResultadoB() {
+    $("panelResultadoB").hidden = true;
+    $("errorB").hidden = true;
+    ultimoB = null;
+  }
+
+  function mostrarErrorB(msg) {
+    $("errorB").textContent = msg;
+    $("errorB").hidden = false;
+  }
+
+  // ---------- proceso
+  $("btnProcesarB").addEventListener("click", async () => {
+    const btn = $("btnProcesarB");
+    if (btn.disabled || procesandoB) return;   // el disabled ya bloquea mouse y teclado; esto es la red
+    $("errorB").hidden = true;
+    const teniaFoco = document.activeElement === btn;
+    procesandoB = true;
+    btn.disabled = true;
+    btn.classList.add("trabajando"); btn.textContent = "Contabilizando";
+    $("estadoProcesoB").textContent = "Leyendo los archivos, puede demorar unos segundos.";
+    try {
+      await librerias();
+      // se cedio el hilo bajando las librerias: el usuario pudo apretar "Empezar de nuevo"
+      const porTipo = clasificarB().porTipo;
+      const faltan = OBLIGATORIOS_B.filter((t) => !porTipo[t]);
+      if (faltan.length) throw new Error(`Falta ${faltan.map((t) => TIPOS_B[t].nombre).join(", ")}.`);
+      const uno = (t) => porTipo[t][0].bytes;
+
+      const liquidaciones = [];
+      for (const a of porTipo.liqPayway) {
+        const pdfs = /\.zip$/i.test(a.nombre)
+          ? Bancos.pdfsDelZip(window.fflate, a.bytes)
+          : [{ archivo: a.nombre, bytes: a.bytes }];
+        if (!pdfs.length) throw new Error(`"${a.nombre}": adentro del ZIP no hay ningún PDF.`);
+        for (const x of pdfs) {
+          $("estadoProcesoB").textContent = `Leyendo ${x.archivo}.`;
+          liquidaciones.push({ archivo: x.archivo, texto: await Bancos.textoDePdf(window.pdfjsLib, x.bytes) });
+        }
+      }
+
+      $("estadoProcesoB").textContent = "Cruzando y armando el asiento.";
+      // procesar() es sincronico y congela la pantalla: hay que dejar pintar el aviso antes
+      await new Promise((r) => {
+        let hecho = false;
+        const seguir = () => { if (!hecho) { hecho = true; r(); } };
+        requestAnimationFrame(() => requestAnimationFrame(seguir));
+        setTimeout(seguir, 120); // respaldo: si la pestana no esta pintando, rAF no se dispara nunca
+      });
+
+      const R = Bancos.procesar({
+        liquidaciones: liquidaciones,
+        extracto: uno("extracto"), qr: uno("qr"),
+        libMp: uno("libMp"), resumenMp: uno("resumenMp"),
+        previo: porTipo.previo ? uno("previo") : null,
+      });
+      const leidos = [];
+      for (const [t, info] of Object.entries(TIPOS_B)) {
+        for (const a of porTipo[t] || []) leidos.push({ tipo: info.nombre, nombre: a.nombre });
+      }
+      ultimoB = { R: R, libro: Bancos.armarLibro(R, leidos), nombreSalida: `Bancos_${R.periodo}.xlsx` };
+      pintarResultadoB(ultimoB);
+      $("estadoProcesoB").textContent = `Listo: asiento de ${Bancos.nombrePeriodo(R.periodo)} por ${plata(R.asiento.debe)}`
+        + (R.asiento.dif ? ", que NO cierra." : ", que cierra.")
+        + ` ${R.pendientes.nuevos.length} pendientes nuevos. ${R.avisos.length} avisos.`;
+    } catch (e) {
+      console.error(e);
+      ocultarResultadoB();
+      mostrarErrorB(e.message || String(e));
+      $("estadoProcesoB").textContent = "La contabilización falló.";
+    } finally {
+      procesandoB = false;
+      btn.classList.remove("trabajando");
+      btn.textContent = "Contabilizar";   // rotulo fijo: no se lee del DOM, no se puede contaminar
+      btn.disabled = !sePuedeB;
+      // deshabilitar el boton le saca el foco: si venia del teclado hay que devolverselo
+      if (teniaFoco && !btn.disabled) btn.focus({ preventScroll: true });
+    }
+  });
+
+  // ---------- resultado
+  function pintarResultadoB(u) {
+    const R = u.R, A = R.asiento;
+    const dias = R.payway.dias, ests = R.payway.ests, qrF = R.qrCruce.filas;
+    const cuenta = (arr, f) => arr.filter(f).length;
+
+    const estsOk = cuenta(ests, (e) => e.cruza);
+    const estsSin = cuenta(ests, (e) => e.sinMovimientos);
+    const estsNo = ests.length - estsOk - estsSin;
+    const cruzan = cuenta(dias, (d) => d.cruza) + cuenta(qrF, (r) => r.cruza) + cuenta(R.mpCruce, (r) => r.cruza);
+    const noCruzan = cuenta(dias, (d) => !d.cruza) + cuenta(qrF, (r) => !r.cruza) + cuenta(R.mpCruce, (r) => !r.cruza);
+    const acreditado = A.t.banco + A.t.mp;
+    const pend = R.pendientes.nuevos.length + R.pendientes.siguen.length;
+
+    $("periodoB").textContent = Bancos.nombrePeriodo(R.periodo);
+    $("kpisB").innerHTML =
+      cifra("ok", cruzan, "Acreditaciones conciliadas",
+            `${plata(acreditado)} acreditados<br>${estsOk} de ${ests.length - estsSin} establecimientos Payway con movimientos`) +
+      cifra(noCruzan ? "bad" : "ok", noCruzan, "Sin conciliar",
+            noCruzan ? "No entran al asiento" : "No sobró ni faltó nada") +
+      cifra(pend ? "rev" : "ok", pend, "Pendientes",
+            `${R.pendientes.nuevos.length} nuevos · ${R.pendientes.siguen.length} de antes<br>${R.pendientes.resueltos.length} resueltos este mes`) +
+      cifra(A.dif ? "bad" : "ok", A.lineas.length, "Líneas del asiento",
+            `${plata(A.debe)}<br>${A.dif ? "NO cierra: " + plata(A.dif) + " de diferencia" : "debe = haber"}`);
+
+    const ctrl = (que, clave, ok, mal) =>
+      `<tr><td>${que}<span class="clave">${clave}</span></td><td class="num">${ok}</td><td class="num">${mal}</td></tr>`;
+    $("tablaControlB").innerHTML =
+      `<caption>Paso 1 · Control de conciliación</caption>` +
+      `<thead><tr><th>Qué se cruza y con qué clave</th><th class="num">Cruzan</th><th class="num">No cruzan</th></tr></thead><tbody>` +
+      ctrl("Liquidaciones Payway contra el extracto", "por día: nº de establecimiento + fecha de pago",
+           cuenta(dias, (d) => d.cruza), cuenta(dias, (d) => !d.cruza)) +
+      ctrl("Establecimientos Payway que entran al asiento",
+           "entra el establecimiento completo, o no entra" + (estsSin ? ` · ${estsSin} sin movimientos del mes` : ""),
+           estsOk, estsNo) +
+      ctrl("Transferencias QR contra el extracto", "fecha de venta + importe neto",
+           cuenta(qrF, (r) => r.cruza), cuenta(qrF, (r) => !r.cruza)) +
+      ctrl("Liberaciones de Mercado Pago contra el resumen de cuenta", "SOURCE_ID = REFERENCE_ID",
+           cuenta(R.mpCruce, (r) => r.cruza), cuenta(R.mpCruce, (r) => !r.cruza)) +
+      `</tbody>`;
+
+    $("tablaAsientoB").innerHTML =
+      `<caption>Paso 2 · Asiento de ${esc(Bancos.nombrePeriodo(R.periodo))}</caption>` +
+      `<thead><tr><th>Cuenta</th><th class="num">Debe</th><th class="num">Haber</th></tr></thead><tbody>` +
+      A.lineas.map((l) => `<tr><td>${esc(l.cuenta)}</td><td class="num">${l.debe ? plata(l.debe) : ""}</td>` +
+                          `<td class="num">${l.haber ? plata(l.haber) : ""}</td></tr>`).join("") +
+      `</tbody><tfoot><tr><td>${A.dif ? `<span class="mal">No cierra: ${plata(A.dif)} de diferencia</span>` : "Totales"}</td>` +
+      `<td class="num${A.dif ? " mal" : ""}">${plata(A.debe)}</td>` +
+      `<td class="num${A.dif ? " mal" : ""}">${plata(A.haber)}</td></tr></tfoot>`;
+
+    const salientes = R.mpCruce.filter((r) => r.alcance === "fuera");
+    const nota = (t) => `<div class="barra-fila"><span class="et"></span><div class="nota-neteo">${t}</div></div>`;
+    $("fueraB").innerHTML =
+      R.impBanco.filter((x) => x.cant).map((x) => nota(
+        `${esc(x.concepto)}: ${x.cant} movimientos por ${plata(x.importe)}. Los cobra el banco sobre las acreditaciones y van en el asiento mensual de impuestos, no en éste.`)).join("") +
+      (salientes.length ? nota(
+        `Mercado Pago: ${salientes.length} transferencias salientes por ${plata(salientes.reduce((a, r) => a + r.neto, 0))}. Quedan fuera del alcance de esta pantalla.`) : "");
+
+    $("avisosB").innerHTML = R.avisos.map((a) => `<li>${esc(a)}</li>`).join("");
+    $("nombreSalidaB").textContent = u.nombreSalida;
+
+    const panel = $("panelResultadoB");
+    panel.hidden = true;
+    void panel.offsetWidth; // reinicia las animaciones
+    panel.hidden = false;
+    contarCifras("#kpisB .n");
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  $("btnDescargarB").addEventListener("click", () => {
+    if (ultimoB) XLSX.writeFile(ultimoB.libro, ultimoB.nombreSalida);
   });
 })();
 </script>
