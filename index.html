@@ -493,7 +493,9 @@
 </main>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"
+        integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb"
+        crossorigin="anonymous"></script>
 <script src="conciliar.js?v=13"></script>
 <script>
 (function () {
@@ -655,6 +657,7 @@
         + `${R.movSinRec.cant} movimientos sin recibo.`;
     } catch (e) {
       console.error(e);
+      ocultarResultado();                // si no, queda en pantalla el resultado de la corrida anterior
       mostrarError(e.message || String(e));
       $("estadoProceso").textContent = "La conciliación falló.";
     } finally {
@@ -782,16 +785,25 @@
   // Leer el ZIP y los PDF necesita dos librerias que juntas pasan el mega y medio.
   // Se bajan recien cuando se aprieta el boton, para no cobrarselas a quien entra
   // solo a la otra seccion.
+  // Cada archivo va con su huella sha384. Si el CDN sirviera cualquier otra cosa,
+  // el navegador se niega a ejecutarla. Las huellas se recalculan a mano si se
+  // cambia de version: openssl dgst -sha384 -binary archivo | openssl base64 -A
   const CDN_FFLATE = "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js";
+  const SRI_FFLATE = "sha384-DT0Ls0mO7JmjTnT+oBuMhEJzYJO1zUqzuuMXNdnOmOQRIpN2BgSjvBV/j50NngIT";
   const CDN_PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+  const SRI_PDFJS = "sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e";
   const CDN_PDFWORKER = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  const SRI_PDFWORKER = "sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2";
   const bajando = new Map();
-  function bajarScript(url) {
+  function bajarScript(url, huella) {
     if (!bajando.has(url)) {
       bajando.set(url, new Promise((listo, falla) => {
         const el = document.createElement("script");
         el.src = url;
+        el.integrity = huella;
+        el.crossOrigin = "anonymous";    // sin CORS el navegador no puede verificar la huella
         el.onload = () => listo();
+        // onerror cubre los dos casos: no bajo, o bajo y la huella no da
         // si fallo, se saca de la lista: el proximo intento vuelve a probar
         el.onerror = () => { bajando.delete(url); el.remove(); falla(new Error("no se pudo cargar " + url)); };
         document.head.appendChild(el);
@@ -799,14 +811,49 @@
     }
     return bajando.get(url);
   }
+
+  // El worker de pdf.js no es un <script>, asi que no admite integrity: pdf.js lo
+  // carga solo desde la URL que le demos. Lo bajamos nosotros, le controlamos la
+  // huella igual que a los otros dos, y recien ahi se lo damos como blob.
+  let workerListo = null;
+  function bajarWorker() {
+    if (!workerListo) {
+      workerListo = (async () => {
+        if (!(window.crypto && window.crypto.subtle)) {
+          throw new Error("Este navegador no permite verificar los archivos que se bajan. "
+            + "Abrí la página con https (o desde localhost) para poder contabilizar.");
+        }
+        const r = await fetch(CDN_PDFWORKER, { mode: "cors" });
+        if (!r.ok) throw new Error("no se pudo bajar " + CDN_PDFWORKER);
+        const bytes = await r.arrayBuffer();
+        const hash = await window.crypto.subtle.digest("SHA-384", bytes);
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(hash)));
+        if ("sha384-" + b64 !== SRI_PDFWORKER) {
+          throw new Error("El archivo pdf.worker.min.js que sirvió el CDN no es el esperado. "
+            + "No se procesó nada. Avisá antes de volver a intentar.");
+        }
+        return URL.createObjectURL(new Blob([bytes], { type: "text/javascript" }));
+      })().catch((e) => { workerListo = null; throw e; });   // el proximo intento vuelve a probar
+    }
+    return workerListo;
+  }
+
   async function librerias() {
+    let worker;
     try {
-      await Promise.all([bajarScript(CDN_FFLATE), bajarScript(CDN_PDFJS)]);
+      const r = await Promise.all([
+        bajarScript(CDN_FFLATE, SRI_FFLATE),
+        bajarScript(CDN_PDFJS, SRI_PDFJS),
+        bajarWorker(),
+      ]);
+      worker = r[2];
     } catch (e) {
-      throw new Error("No se pudieron bajar las librerías para leer el ZIP y los PDF. Revisá la conexión y probá de nuevo.");
+      // el mensaje de huella cambiada se muestra tal cual: no es un problema de conexion
+      if (/no es el esperado|no permite verificar/.test(e.message || "")) throw e;
+      throw new Error("No se pudieron bajar las librerías para leer el ZIP y los PDF, o el navegador no pudo verificarlas. Revisá la conexión y probá de nuevo.");
     }
     if (!window.fflate || !window.pdfjsLib) throw new Error("Las librerías para leer el ZIP y los PDF cargaron mal. Recargá la página.");
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = CDN_PDFWORKER;
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = worker;
   }
 
   // ---------- carga de archivos
