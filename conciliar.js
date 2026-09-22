@@ -694,6 +694,7 @@
     retAfip: "IVA retenciones",
     impDebCred: "Impuesto al Debito y Credito",
     tarjetas: "Tarjetas",
+    naranja: "Tarjeta Naranja a Conciliar",
     rendimiento: "Rendimiento Inversiones",
     sinCuenta: "A DEFINIR — retención o percepción sin cuenta asignada",
   };
@@ -703,6 +704,12 @@
   const CPT_QR = "COBRO CON QR";
   // el debito con que el banco deshace un cobro con QR: la transferencia se dio vuelta
   const CPT_DEV = "DEVOLUCION PEI";
+  // Tarjeta Naranja liquida por transferencia interbancaria, fuera de Payway. No hay
+  // liquidación que respalde el crédito, así que no se puede abrir en bruto, arancel e
+  // impuestos: entra entero a una cuenta a conciliar hasta que aparezca el documento.
+  // La clave única es el CUIT en el detalle, no el texto del concepto: por "CRED BCA
+  // ELECTRONICA INTERBANC" puede entrar plata de cualquiera.
+  const CUIT_NARANJA = "30685376349";
   const CPT_IMP_CR = "Impuesto Débitos y Créditos/CR";
   const CPT_IIBB_AC = "IIBB- Acreditaciones Bancarias";
 
@@ -942,7 +949,11 @@
   }
 
   // ------------------------------------------- lectura: Excel del mes anterior
-  const CAB_PENDIENTES = ["Período de origen", "Origen", "Fecha", "Clave única", "Concepto", "Importe", "Períodos pendiente"];
+  // La última columna la escribe una PERSONA, no el programa: si el mes que viene
+  // ese Excel vuelve como entrada y la celda tiene texto, el pendiente se da por
+  // cerrado a mano y deja de arrastrarse. Nunca entra al asiento por esa vía: el
+  // motivo lo escribió alguien, no una clave única, y eso no alcanza para contabilizar.
+  const CAB_PENDIENTES = ["Período de origen", "Origen", "Fecha", "Clave única", "Concepto", "Importe", "Períodos pendiente", "Cerrado a mano (motivo)"];
 
   function leerPendientes(bytes) {
     const wb = leerLibro(bytes);
@@ -959,6 +970,7 @@
         concepto: String(r["Concepto"] == null ? "" : r["Concepto"]).trim(),
         importe: cents(r["Importe"]),
         meses: Number(r["Períodos pendiente"]) || 1,
+        cerrado: String(r["Cerrado a mano (motivo)"] == null ? "" : r["Cerrado a mano (motivo)"]).trim(),
       }));
   }
 
@@ -967,7 +979,7 @@
     cents: cents, pesos: pesos, detectar: detectar, usarLectorPdf: usarLectorPdf,
     leerLiquidacionPayway: leerLiquidacionPayway, leerExtracto: leerExtracto, leerQr: leerQr,
     leerLiberaciones: leerLiberaciones, leerResumenMp: leerResumenMp, leerPendientes: leerPendientes,
-    CUENTAS: CUENTAS, CAB_PENDIENTES: CAB_PENDIENTES,
+    CUENTAS: CUENTAS, CAB_PENDIENTES: CAB_PENDIENTES, CUIT_NARANJA: CUIT_NARANJA,
     CPT_PRISMA: CPT_PRISMA, CPT_QR: CPT_QR, CPT_DEV: CPT_DEV,
     CPT_IMP_CR: CPT_IMP_CR, CPT_IIBB_AC: CPT_IIBB_AC,
     filas: filas, objetos: objetos, leerLibro: leerLibro,
@@ -1118,9 +1130,23 @@
   // ------------------------------------------------------------- el asiento
   const CLAVES_IMP_MP = { debitos_creditos: "impDebCred", santa_fe: "retIibb" };
 
-  function armarAsiento(payway, qrCruce, mpCruce, resueltos, avisos) {
+  /**
+   * Los créditos de Tarjeta Naranja en el extracto, por CUIT en el detalle.
+   * No se cruzan contra nada: no hay liquidación de Naranja todavía. Se los
+   * identifica y se los manda enteros a una cuenta a conciliar, para que el
+   * banco cierre y la plata quede a la vista hasta que aparezca el documento.
+   */
+  function creditosNaranja(extracto, periodo) {
+    return extracto.filter((r) => r.importe > 0 && r.fecha.slice(0, 7) === periodo &&
+                                  r.detalle.indexOf(L.CUIT_NARANJA) >= 0);
+  }
+
+  function armarAsiento(payway, qrCruce, mpCruce, resueltos, avisos, naranja) {
     const t = { banco: 0, mp: 0, gastos: 0, ivaCf: 0, retIibb: 0, retAfip: 0,
-                impDebCred: 0, tarjetas: 0, rendimiento: 0, sinCuenta: 0 };
+                impDebCred: 0, tarjetas: 0, naranja: 0, rendimiento: 0, sinCuenta: 0 };
+
+    // --- Tarjeta Naranja: el crédito entra entero, sin abrir en descuentos
+    for (const r of naranja || []) { t.banco += r.importe; t.naranja += r.importe; }
 
     // --- Payway: solo establecimientos enteros que cruzaron
     for (const e of payway.ests) {
@@ -1196,6 +1222,7 @@
       { cuenta: CUENTAS.impDebCred, debe: t.impDebCred, haber: 0 },
       { cuenta: CUENTAS.sinCuenta, debe: t.sinCuenta, haber: 0 },
       { cuenta: CUENTAS.tarjetas, debe: 0, haber: t.tarjetas },
+      { cuenta: CUENTAS.naranja, debe: 0, haber: t.naranja },
       { cuenta: CUENTAS.rendimiento, debe: 0, haber: t.rendimiento },
     ].filter((l) => l.debe !== 0 || l.haber !== 0);
 
@@ -1214,6 +1241,13 @@
   /**
    * Arma los pendientes de este mes y resuelve los que venían del anterior.
    * Un pendiente se resuelve solo si reaparece POR SU MISMA CLAVE ÚNICA.
+   *
+   * Hay una segunda salida, para los que nunca van a reaparecer porque el archivo
+   * los trae con otro identificador: alguien escribe el motivo en la columna
+   * "Cerrado a mano (motivo)" del Excel y el mes siguiente dejan de arrastrarse.
+   * La clave le gana al cierre a mano: si el movimiento aparece de verdad se
+   * resuelve por las buenas y se contabiliza, aunque la celda esté escrita. Un
+   * cerrado a mano NO entra al asiento en ningún caso.
    */
   function armarPendientes(periodo, payway, qrCruce, mpCruce, previos) {
     const nuevos = [];
@@ -1282,19 +1316,20 @@
       qr: new Set(qrCruce.filas.filter((r) => r.cruza).map((r) => "qr " + r.id)),
       mp: new Set(mpCruce.filter((r) => r.cruza).map((r) => "mp " + r.id)),
     };
-    const resueltos = [], siguen = [];
+    const resueltos = [], siguen = [], cerrados = [];
     for (const v of previos) {
       const resuelto = claves.payway.has(v.clave) || claves.prisma.has(v.clave) ||
                        claves.qr.has(v.clave) || claves.mp.has(v.clave);
       if (resuelto) resueltos.push(v);
+      else if (v.cerrado) cerrados.push(v);
       else siguen.push(Object.assign({}, v, { meses: v.meses + 1 }));
     }
-    return { nuevos: nuevos, resueltos: resueltos, siguen: siguen };
+    return { nuevos: nuevos, resueltos: resueltos, siguen: siguen, cerrados: cerrados };
   }
 
   root.BancosMotor = {
     comercioDe, fechaPagoAIso, cruzarPayway, cruzarQr, cruzarMp,
-    impuestoMp, armarAsiento, armarPendientes, fmt, CLAVES_IMP_MP,
+    impuestoMp, creditosNaranja, armarAsiento, armarPendientes, fmt, CLAVES_IMP_MP,
   };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -1416,8 +1451,22 @@
                   '" que esta sección no conoce. No entra al asiento, queda en Pendientes.');
     }
 
+    const naranja = M.creditosNaranja(extracto, periodo);
+    if (naranja.length) {
+      avisos.push(naranja.length + " crédito(s) de Tarjeta Naranja en el extracto por " +
+                  M.fmt(naranja.reduce((a, r) => a + r.importe, 0)) + ". Naranja liquida por " +
+                  "transferencia, fuera de Payway: no hay liquidación que abra el bruto y los " +
+                  'descuentos, así que el crédito va entero a "' + L.CUENTAS.naranja + '".');
+    }
+
     const pend = M.armarPendientes(periodo, payway, qrCruce, mpCruce, previos);
-    const asiento = M.armarAsiento(payway, qrCruce, mpCruce, pend.resueltos, avisos);
+    const asiento = M.armarAsiento(payway, qrCruce, mpCruce, pend.resueltos, avisos, naranja);
+
+    if (pend.cerrados.length) {
+      avisos.push(pend.cerrados.length + " pendiente(s) que venían de antes figuran cerrados a mano en el " +
+                  "Excel del mes anterior. No se arrastran más y no entran a este asiento. " +
+                  'Están con su motivo en la hoja "Cerrados a mano".');
+    }
 
     const vencidos = pend.siguen.filter((v) => v.meses >= 2);
     if (vencidos.length) {
@@ -1431,7 +1480,7 @@
     });
 
     return { periodo, avisos, extracto, liqs, qr, libMp, resumenMp, payway, qrCruce, mpCruce,
-             pendientes: pend, asiento, impBanco, previos };
+             pendientes: pend, asiento, impBanco, naranja, previos };
   }
 
   // --------------------------------------------------------------- el Excel
@@ -1441,6 +1490,7 @@
 
   function filaPend(v) {
     return [nombrePeriodo(v.periodo), v.origen, fx(v.fecha), v.clave, v.concepto, pesos(v.importe), v.meses,
+            v.cerrado || "",
             v.contabiliza ? "sí" : "no", pesos(v.bruto), pesos(v.neto), pesos(v.arancel), pesos(v.financiero),
             pesos(v.iva), pesos(v.retIibb), pesos(v.retAfip), pesos(v.impDebCred), pesos(v.rendimiento || 0)];
   }
@@ -1472,6 +1522,8 @@
       ["Cobros de Mercado Pago",
        pesos(R.mpCruce.filter((r) => r.cruza && r.alcance === "cobro").reduce((a, r) => a + r.bruto, 0)),
        pesos(R.mpCruce.filter((r) => r.cruza && r.alcance === "cobro").reduce((a, r) => a + r.neto, 0))],
+      ["Créditos de Tarjeta Naranja (" + R.naranja.length + ", sin liquidación: a conciliar)", "",
+       pesos(R.naranja.reduce((a, r) => a + r.importe, 0))],
       ["Rendimientos de Mercado Pago", "",
        pesos(R.mpCruce.filter((r) => r.cruza && r.alcance === "rendimiento").reduce((a, r) => a + r.neto, 0))],
       [],
@@ -1482,6 +1534,8 @@
        pesos(R.pendientes.resueltos.reduce((a, v) => a + v.importe, 0))],
       ["Que venían de antes y siguen", R.pendientes.siguen.length,
        pesos(R.pendientes.siguen.reduce((a, v) => a + v.importe, 0))],
+      ["Cerrados a mano en el Excel anterior (no entran al asiento)", R.pendientes.cerrados.length,
+       pesos(R.pendientes.cerrados.reduce((a, v) => a + v.importe, 0))],
       [],
       ["FUERA DE ESTE ASIENTO", "Cantidad", "Importe"],
       ...R.impBanco.map((x) => [x.concepto + " (va en el asiento mensual de impuestos)", x.cant, pesos(x.importe)]),
@@ -1575,16 +1629,30 @@
       ["Fecha", "Concepto", "Detalle", "Importe"], ci, { importes: [3], fechas: [0] }),
       "Impuestos del banco");
 
+    // ---------------- Tarjeta Naranja
+    if (R.naranja.length) {
+      XLSX.utils.book_append_sheet(wb, hoja(
+        ["Fecha", "Hora", "Concepto", "Detalle", "Importe acreditado"],
+        R.naranja.map((r) => [fx(r.fecha), r.hora, r.concepto, r.detalle, pesos(r.importe)]),
+        { importes: [4], fechas: [0] }), "Tarjeta Naranja");
+    }
+
     // ---------------- Pendientes
     const pfilas = R.pendientes.siguen.concat(R.pendientes.nuevos).map(filaPend);
     XLSX.utils.book_append_sheet(wb, hoja(CAB_PEND, pfilas, {
-      importes: [5, 8, 9, 10, 11, 12, 13, 14, 15, 16], fechas: [2],
+      importes: [5, 9, 10, 11, 12, 13, 14, 15, 16, 17], fechas: [2],
       rojo: (r) => Number(pfilas[r - 1][6]) >= 2 }), "Pendientes");
 
     // ---------------- Pendientes resueltos
     if (R.pendientes.resueltos.length) {
       XLSX.utils.book_append_sheet(wb, hoja(CAB_PEND, R.pendientes.resueltos.map(filaPend), {
-        importes: [5, 8, 9, 10, 11, 12, 13, 14, 15, 16], fechas: [2] }), "Pendientes resueltos");
+        importes: [5, 9, 10, 11, 12, 13, 14, 15, 16, 17], fechas: [2] }), "Pendientes resueltos");
+    }
+
+    // ---------------- Pendientes cerrados a mano
+    if (R.pendientes.cerrados.length) {
+      XLSX.utils.book_append_sheet(wb, hoja(CAB_PEND, R.pendientes.cerrados.map(filaPend), {
+        importes: [5, 9, 10, 11, 12, 13, 14, 15, 16, 17], fechas: [2] }), "Cerrados a mano");
     }
 
     return wb;
