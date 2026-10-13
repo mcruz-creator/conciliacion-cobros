@@ -791,6 +791,7 @@
     if (txt.indexOf("INITIAL_BALANCE") >= 0 && txt.indexOf("REFERENCE_ID") >= 0) return "resumenMp";
     if (txt.indexOf("QR ID") >= 0 && txt.indexOf("MONTO NETO") >= 0) return "qr";
     if (txt.indexOf("Concepto") >= 0 && txt.indexOf("Débito") >= 0 && txt.indexOf("Crédito") >= 0) return "extracto";
+    if (txt.indexOf("N° de comercio") >= 0 && txt.indexOf("Monto bruto") >= 0 && txt.indexOf("Monto neto") >= 0) return "liqNaranja";
     return null;
   }
 
@@ -974,10 +975,76 @@
       }));
   }
 
+  // ------------------------------------------------- lectura: liquidaciones Tarjeta Naranja
+  /** Parsea un importe con formato "$ NN.NNN,NN" o "-$ NN.NNN,NN" devolviendo centavos. */
+  function pesosTxt(v) {
+    if (v == null) return 0;
+    const s = String(v).trim();
+    if (!s || s === "$ 0") return 0;
+    const neg = s.charAt(0) === "-" ? -1 : 1;
+    const m = s.replace(/[^0-9.,]/g, "");        // quitar "$", "-", espacios
+    return neg * cents(m);
+  }
+
+  /** Convierte "dd/MMM/yy" (ej "13/AGO/26") a ISO "2026-08-13". */
+  function isoNaranja(v) {
+    const s = String(v).trim();
+    const m = s.match(/^(\d{1,2})\/([A-Za-z]{3})\/(\d{2})$/);
+    if (!m) return iso(v);                        // si viene como fecha Excel o dd/mm, el iso() generico
+    const MESES_N = { ENE: "01", FEB: "02", MAR: "03", ABR: "04", MAY: "05", JUN: "06",
+                      JUL: "07", AGO: "08", SEP: "09", OCT: "10", NOV: "11", DIC: "12" };
+    const mm = MESES_N[m[2].toUpperCase()];
+    if (!mm) return "";
+    return "20" + m[3] + "-" + mm + "-" + m[1].padStart(2, "0");
+  }
+
+  function leerNaranja(bytes) {
+    const mat = filas(leerLibro(bytes));
+    const iCab = mat.findIndex((f) => f.some((c) => String(c).trim() === "Monto bruto"));
+    if (iCab < 0) throw new Error("El archivo de Naranja no tiene la fila de encabezados con 'Monto bruto'");
+    return objetos(mat, iCab)
+      .filter((r) => String(r["Cuit"] == null ? "" : r["Cuit"]).trim() !== "")
+      .map((r, i) => {
+        // Los descuentos vienen con signo negativo del archivo (son deducciones del
+        // bruto). Se guardan POSITIVOS, igual que en Payway: son gastos al debe.
+        const gastos = -(pesosTxt(r["Arancel"]) + pesosTxt(r["Interes por plan"]) +
+                         pesosTxt(r["Interes por pago anticipado"]) + pesosTxt(r["Transferencia electr\u00f3nica"]) +
+                         pesosTxt(r["Bonificaciones"]));
+        const ivaCf = -pesosTxt(r["IVA"]);
+        const retIibb = -(pesosTxt(r["Percepci\u00f3n de ingresos brutos"]) + pesosTxt(r["SIRTAC"]) +
+                          pesosTxt(r["Retenci\u00f3n de ingresos brutos"]));
+        const retAfip = -(pesosTxt(r["Percepci\u00f3n IVA"]) + pesosTxt(r["Retenci\u00f3n IVA"]));
+        const retGan = -pesosTxt(r["Retenci\u00f3n ganancias"]);
+        const retMuni = -pesosTxt(r["Retenci\u00f3n municipal"]);
+        const impDebCred = -pesosTxt(r["Percepci\u00f3n sobre d\u00e9bitos/cr\u00e9ditos"]);
+        const anticipos = -pesosTxt(r["Anticipos"]);
+        return {
+          n: i,
+          cuit: String(r["Cuit"]).trim().replace(/-/g, ""),
+          fecha: isoNaranja(r["Fecha"]),
+          comercio: String(r["N\u00b0 de comercio"] == null ? "" : r["N\u00b0 de comercio"]).trim(),
+          tipoLiq: String(r["Tipo de liquidaci\u00f3n"] == null ? "" : r["Tipo de liquidaci\u00f3n"]).trim(),
+          nroLiq: String(r["N\u00b0 de liquidaci\u00f3n"] == null ? "" : r["N\u00b0 de liquidaci\u00f3n"]).trim(),
+          bruto: pesosTxt(r["Monto bruto"]),
+          neto: pesosTxt(r["Monto neto"]),
+          gastos: gastos,
+          ivaCf: ivaCf,
+          retIibb: retIibb,
+          retAfip: retAfip,
+          retGan: retGan,
+          retMuni: retMuni,
+          impDebCred: impDebCred,
+          anticipos: anticipos,
+          // lo que no mapea a cuentas conocidas
+          sinCuenta: retGan + retMuni + anticipos,
+        };
+      });
+  }
+
   root.BancosLect = {
     num: num, iso: iso, ddmm: ddmm, periodoDe: periodoDe, nombrePeriodo: nombrePeriodo,
     cents: cents, pesos: pesos, detectar: detectar, usarLectorPdf: usarLectorPdf,
-    leerLiquidacionPayway: leerLiquidacionPayway, leerExtracto: leerExtracto, leerQr: leerQr,
+    leerLiquidacionPayway: leerLiquidacionPayway, leerExtracto: leerExtracto, leerQr: leerQr, leerNaranja: leerNaranja,
     leerLiberaciones: leerLiberaciones, leerResumenMp: leerResumenMp, leerPendientes: leerPendientes,
     CUENTAS: CUENTAS, CAB_PENDIENTES: CAB_PENDIENTES, CUIT_NARANJA: CUIT_NARANJA,
     CPT_PRISMA: CPT_PRISMA, CPT_QR: CPT_QR, CPT_DEV: CPT_DEV,
@@ -1131,22 +1198,82 @@
   const CLAVES_IMP_MP = { debitos_creditos: "impDebCred", santa_fe: "retIibb" };
 
   /**
-   * Los créditos de Tarjeta Naranja en el extracto, por CUIT en el detalle.
-   * No se cruzan contra nada: no hay liquidación de Naranja todavía. Se los
-   * identifica y se los manda enteros a una cuenta a conciliar, para que el
-   * banco cierre y la plata quede a la vista hasta que aparezca el documento.
+   * Cruce de Tarjeta Naranja: liquidaciones contra créditos del extracto.
+   *
+   * Lado banco: renglones del extracto cuyo detalle contiene el CUIT de Naranja
+   * y cuyo importe es positivo (créditos).
+   *
+   * Lado liquidación: filas leídas de leerNaranja.
+   *
+   * Clave única: neto de la liquidación = importe del crédito en el banco (centavos exactos).
+   * Si un neto se repite, los renglones con ese neto quedan sin cruzar y van a pendientes
+   * (no inventamos desempate).
+   *
+   * Cuando no hay archivo de liquidaciones (liqNaranja vacío o null), el comportamiento
+   * es el mismo de antes: los créditos del banco se identifican por CUIT y van enteros
+   * a la cuenta puente "Tarjeta Naranja a Conciliar".
    */
-  function creditosNaranja(extracto, periodo) {
-    return extracto.filter((r) => r.importe > 0 && r.fecha.slice(0, 7) === periodo &&
-                                  r.detalle.indexOf(L.CUIT_NARANJA) >= 0);
+  function cruzarNaranja(extracto, liqNaranja, periodo) {
+    const bancoCred = extracto.filter((r) => r.importe > 0 && r.fecha.slice(0, 7) === periodo &&
+                                             r.detalle.indexOf(L.CUIT_NARANJA) >= 0);
+    if (!liqNaranja || !liqNaranja.length) {
+      // sin liquidación: cada crédito va entero a la cuenta puente
+      return { cruzados: [], sinLiq: bancoCred, sinBanco: [], bancoCred: bancoCred };
+    }
+
+    // Bolsa de importes del banco (en centavos), para cruzar por neto
+    const bolsa = new Map();            // neto -> [indices en bancoCred]
+    for (let i = 0; i < bancoCred.length; i++) {
+      const k = bancoCred[i].importe;
+      (bolsa.get(k) || bolsa.set(k, []).get(k)).push(i);
+    }
+
+    const cruzados = [], sinBanco = [];
+    const usados = new Set();
+    for (const liq of liqNaranja) {
+      const candidatos = bolsa.get(liq.neto) || [];
+      // quedarse solo con los que no fueron usados
+      const libres = candidatos.filter((i) => !usados.has(i));
+      if (libres.length === 1) {
+        usados.add(libres[0]);
+        cruzados.push({ liq: liq, banco: bancoCred[libres[0]], cruza: true });
+      } else if (libres.length > 1) {
+        // Ambigüedad: mismo neto en más de un crédito del banco. No desempatamos.
+        sinBanco.push(liq);
+      } else {
+        sinBanco.push(liq);
+      }
+    }
+    const sinLiq = bancoCred.filter((_, i) => !usados.has(i));
+    return { cruzados: cruzados, sinLiq: sinLiq, sinBanco: sinBanco, bancoCred: bancoCred };
   }
 
-  function armarAsiento(payway, qrCruce, mpCruce, resueltos, avisos, naranja) {
+  function armarAsiento(payway, qrCruce, mpCruce, resueltos, avisos, naranjaCruce) {
     const t = { banco: 0, mp: 0, gastos: 0, ivaCf: 0, retIibb: 0, retAfip: 0,
                 impDebCred: 0, tarjetas: 0, naranja: 0, rendimiento: 0, sinCuenta: 0 };
 
-    // --- Tarjeta Naranja: el crédito entra entero, sin abrir en descuentos
-    for (const r of naranja || []) { t.banco += r.importe; t.naranja += r.importe; }
+    // --- Tarjeta Naranja
+    // Cruzados contra liquidación: abrimos bruto vs descuentos, igual que Payway
+    for (const c of (naranjaCruce && naranjaCruce.cruzados || [])) {
+      const l = c.liq;
+      t.banco += l.neto;
+      t.tarjetas += l.bruto;
+      t.gastos += l.gastos;
+      t.ivaCf += l.ivaCf;
+      t.retIibb += l.retIibb;
+      t.retAfip += l.retAfip;
+      t.impDebCred += l.impDebCred;
+      if (l.sinCuenta) {
+        t.sinCuenta += l.sinCuenta;
+        avisos.push("Naranja liq " + l.nroLiq + ": retención ganancias, retención municipal o anticipos por " +
+                    fmt(l.sinCuenta) + " sin cuenta asignada. Quedan en la línea \"A DEFINIR\".");
+      }
+    }
+    // Sin liquidación: el crédito del banco va entero a la cuenta puente
+    for (const r of (naranjaCruce && naranjaCruce.sinLiq || [])) {
+      t.banco += r.importe;
+      t.naranja += r.importe;
+    }
 
     // --- Payway: solo establecimientos enteros que cruzaron
     for (const e of payway.ests) {
@@ -1329,7 +1456,7 @@
 
   root.BancosMotor = {
     comercioDe, fechaPagoAIso, cruzarPayway, cruzarQr, cruzarMp,
-    impuestoMp, creditosNaranja, armarAsiento, armarPendientes, fmt, CLAVES_IMP_MP,
+    impuestoMp, cruzarNaranja, armarAsiento, armarPendientes, fmt, CLAVES_IMP_MP,
   };
 })(typeof window !== "undefined" ? window : globalThis);
 
@@ -1451,12 +1578,23 @@
                   '" que esta sección no conoce. No entra al asiento, queda en Pendientes.');
     }
 
-    const naranja = M.creditosNaranja(extracto, periodo);
-    if (naranja.length) {
-      avisos.push(naranja.length + " crédito(s) de Tarjeta Naranja en el extracto por " +
-                  M.fmt(naranja.reduce((a, r) => a + r.importe, 0)) + ". Naranja liquida por " +
-                  "transferencia, fuera de Payway: no hay liquidación que abra el bruto y los " +
-                  'descuentos, así que el crédito va entero a "' + L.CUENTAS.naranja + '".');
+    const liqNaranja = entradas.liqNaranja ? L.leerNaranja(entradas.liqNaranja) : null;
+    const naranja = M.cruzarNaranja(extracto, liqNaranja, periodo);
+
+    if (naranja.cruzados.length) {
+      avisos.push(naranja.cruzados.length + " liquidaci\u00f3n(es) de Tarjeta Naranja cruzada(s) contra el extracto " +
+                  "por " + M.fmt(naranja.cruzados.reduce((a, c) => a + c.liq.neto, 0)) + ". " +
+                  "El bruto y los descuentos entran al asiento abiertos, igual que Payway.");
+    }
+    if (naranja.sinLiq.length) {
+      avisos.push(naranja.sinLiq.length + " cr\u00e9dito(s) de Naranja en el extracto sin liquidaci\u00f3n que los respalde, por " +
+                  M.fmt(naranja.sinLiq.reduce((a, r) => a + r.importe, 0)) +
+                  ". Van enteros a \"" + L.CUENTAS.naranja + "\" hasta que aparezca el documento.");
+    }
+    if (naranja.sinBanco.length) {
+      avisos.push(naranja.sinBanco.length + " liquidaci\u00f3n(es) de Naranja sin cr\u00e9dito correspondiente en el banco, por " +
+                  M.fmt(naranja.sinBanco.reduce((a, l) => a + l.neto, 0)) + ". " +
+                  "Quedan en Pendientes.");
     }
 
     const pend = M.armarPendientes(periodo, payway, qrCruce, mpCruce, previos);
@@ -1480,7 +1618,7 @@
     });
 
     return { periodo, avisos, extracto, liqs, qr, libMp, resumenMp, payway, qrCruce, mpCruce,
-             pendientes: pend, asiento, impBanco, naranja, previos };
+             pendientes: pend, asiento, impBanco, naranja, liqNaranja, previos };
   }
 
   // --------------------------------------------------------------- el Excel
@@ -1511,6 +1649,9 @@
        R.qrCruce.filas.filter((r) => r.cruza).length, R.qrCruce.filas.filter((r) => !r.cruza).length],
       ["Liberaciones de Mercado Pago contra el resumen de cuenta", "SOURCE_ID = REFERENCE_ID",
        R.mpCruce.filter((r) => r.cruza).length, R.mpCruce.filter((r) => !r.cruza).length],
+      ...(R.liqNaranja ? [["Liquidaciones Naranja contra el extracto",
+       "neto de la liquidación = crédito del banco",
+       R.naranja.cruzados.length, R.naranja.sinLiq.length + R.naranja.sinBanco.length]] : []),
       [],
       ["LO QUE ENTRA AL ASIENTO", "Bruto", "Neto acreditado"],
       ["Tarjetas Payway (establecimientos completos)",
@@ -1522,8 +1663,11 @@
       ["Cobros de Mercado Pago",
        pesos(R.mpCruce.filter((r) => r.cruza && r.alcance === "cobro").reduce((a, r) => a + r.bruto, 0)),
        pesos(R.mpCruce.filter((r) => r.cruza && r.alcance === "cobro").reduce((a, r) => a + r.neto, 0))],
-      ["Créditos de Tarjeta Naranja (" + R.naranja.length + ", sin liquidación: a conciliar)", "",
-       pesos(R.naranja.reduce((a, r) => a + r.importe, 0))],
+      ...(R.naranja.cruzados.length ? [["Tarjeta Naranja (con liquidación)",
+       pesos(R.naranja.cruzados.reduce((a, c) => a + c.liq.bruto, 0)),
+       pesos(R.naranja.cruzados.reduce((a, c) => a + c.liq.neto, 0))]] : []),
+      ...(R.naranja.sinLiq.length ? [["Créditos de Naranja sin liquidación (a conciliar)", "",
+       pesos(R.naranja.sinLiq.reduce((a, r) => a + r.importe, 0))]] : []),
       ["Rendimientos de Mercado Pago", "",
        pesos(R.mpCruce.filter((r) => r.cruza && r.alcance === "rendimiento").reduce((a, r) => a + r.neto, 0))],
       [],
@@ -1630,11 +1774,33 @@
       "Impuestos del banco");
 
     // ---------------- Tarjeta Naranja
-    if (R.naranja.length) {
-      XLSX.utils.book_append_sheet(wb, hoja(
-        ["Fecha", "Hora", "Concepto", "Detalle", "Importe acreditado"],
-        R.naranja.map((r) => [fx(r.fecha), r.hora, r.concepto, r.detalle, pesos(r.importe)]),
-        { importes: [4], fechas: [0] }), "Tarjeta Naranja");
+    const tieneTN = R.naranja.cruzados.length || R.naranja.sinLiq.length || R.naranja.sinBanco.length;
+    if (tieneTN) {
+      const cabTN = ["Estado", "Fecha liq.", "N\u00ba liquidaci\u00f3n", "N\u00ba comercio", "Bruto", "Gastos",
+                     "IVA", "Ret. IIBB", "Ret. AFIP", "Imp. d\u00e9b./cr\u00e9d.", "Otros desc.", "Neto",
+                     "Fecha banco", "Importe banco"];
+      const filTN = [];
+      for (const c of R.naranja.cruzados) {
+        filTN.push(["Cruzada", fx(c.liq.fecha), c.liq.nroLiq, c.liq.comercio,
+                     pesos(c.liq.bruto), pesos(c.liq.gastos), pesos(c.liq.ivaCf),
+                     pesos(c.liq.retIibb), pesos(c.liq.retAfip), pesos(c.liq.impDebCred),
+                     pesos(c.liq.sinCuenta), pesos(c.liq.neto),
+                     fx(c.banco.fecha), pesos(c.banco.importe)]);
+      }
+      for (const r of R.naranja.sinLiq) {
+        filTN.push(["Sin liquidaci\u00f3n", "", "", "", "", "", "", "", "", "", "", "",
+                     fx(r.fecha), pesos(r.importe)]);
+      }
+      for (const l of R.naranja.sinBanco) {
+        filTN.push(["Sin cr\u00e9dito en el banco", fx(l.fecha), l.nroLiq, l.comercio,
+                     pesos(l.bruto), pesos(l.gastos), pesos(l.ivaCf),
+                     pesos(l.retIibb), pesos(l.retAfip), pesos(l.impDebCred),
+                     pesos(l.sinCuenta), pesos(l.neto), "", ""]);
+      }
+      XLSX.utils.book_append_sheet(wb, hoja(cabTN, filTN, {
+        importes: [4, 5, 6, 7, 8, 9, 10, 11, 13], fechas: [1, 12],
+        rojo: (r) => filTN[r - 1][0] !== "Cruzada",
+      }), "Tarjeta Naranja");
     }
 
     // ---------------- Pendientes

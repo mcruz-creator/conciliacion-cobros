@@ -475,17 +475,18 @@
             <p><b>1. Liquidaciones Payway contra el extracto.</b> La clave es <b>número de establecimiento + fecha de pago</b>. El banco parte la acreditación del día en varios renglones, uno por marca de tarjeta, así que se suman todos los renglones de <i>Comercios Prisma</i> de ese establecimiento y esa fecha y el total tiene que dar <b>exactamente</b> el total del día de la liquidación. La unidad que entra al asiento es el <b>establecimiento completo</b>: si un solo día no cruza, el establecimiento entero queda pendiente, porque los descuentos vienen en una sola cabecera y no se pueden repartir por día.</p>
             <p><b>2. Transferencias QR contra el extracto.</b> La clave es <b>fecha de venta + importe neto</b>. Una transferencia <i>Aprobada</i> cruza cuando hay un renglón <i>COBRO CON QR</i> de esa fecha y ese importe todavía sin usar. Una <i>Devuelta</i> cruza con la misma clave, pero contra un renglón <i>DEVOLUCION PEI</i>: ese es el débito con que el banco deshace el cobro, y viene por el mismo neto en negativo. Las dos bolsas se buscan por separado, así que una devolución nunca puede consumir la acreditación de un cobro ni al revés. Cuando el mismo día se repite el mismo importe no hace falta desempatar: los renglones son idénticos e intercambiables, y lo verificado es que la cantidad coincide de los dos lados. Un estado que no sea <i>Aprobada</i> ni <i>Devuelto</i> no se busca contra nada y queda pendiente.</p>
             <p><b>3. Mercado Pago.</b> La clave es el <b>identificador de la operación</b>: el <code>SOURCE_ID</code> de la liberación tiene que aparecer como <code>REFERENCE_ID</code> en el resumen de cuenta. Al asiento entran los cobros (<i>payment</i> y <i>refund</i>) y, en su propia cuenta, los rendimientos (<i>asset_management</i>). Las transferencias salientes quedan fuera del alcance de esta pantalla. Un mismo identificador puede traer varios renglones de cada lado: el cruce verifica el <b>total por identificador</b>, no renglón por renglón. En agosto de 2026 hay tres identificadores así y se revisaron uno por uno: los tres dan la misma suma de los dos lados y ninguno mueve el asiento.</p>
-            <p><b>4. El asiento.</b> Se arma con lo que cruzó y nada más. Al debe: lo acreditado en el banco y en Mercado Pago, más cada descuento contra su cuenta —aranceles y costo financiero en Gastos bancarios, el IVA de esos aranceles en IVA CF, las retenciones de ingresos brutos y las percepciones de AFIP—. Al haber: el bruto contra <i>Tarjetas</i>, el rendimiento contra <i>Rendimiento Inversiones</i> y los créditos de Tarjeta Naranja contra <i>Tarjeta Naranja a Conciliar</i>. Si por cualquier motivo el asiento no cierra, no se corrige nada: sale el aviso y la diferencia queda a la vista.</p>
+            <p><b>4. El asiento.</b> Se arma con lo que cruzó y nada más. Al debe: lo acreditado en el banco y en Mercado Pago, más cada descuento contra su cuenta —aranceles y costo financiero en Gastos bancarios, el IVA de esos aranceles en IVA CF, las retenciones de ingresos brutos y las percepciones de AFIP—. Al haber: el bruto contra <i>Tarjetas</i> (incluido Naranja cuando hay liquidación) y el rendimiento contra <i>Rendimiento Inversiones</i>. Si un crédito de Naranja no tiene liquidación, va entero a <i>Tarjeta Naranja a Conciliar</i> como cuenta puente. Si por cualquier motivo el asiento no cierra, no se corrige nada: sale el aviso y la diferencia queda a la vista.</p>
             <p><b>5. Lo que no entra.</b> El impuesto al débito y crédito que cobra el banco sobre las acreditaciones y el de ingresos brutos sobre acreditaciones bancarias se muestran aparte: van en el asiento mensual de impuestos, no en éste. Tampoco entra ninguna retención o percepción a la que no se le haya asignado cuenta: esa va a una línea <i>A DEFINIR</i> bien visible, con su aviso.</p>
             <p><b>6. Pendientes y arrastre.</b> Todo lo que no cruzó queda en la hoja <b>Pendientes</b> del Excel, con su clave y el período en que nació. Ese mismo Excel es el que hay que adjuntar el mes que viene: un pendiente se da por resuelto solo si vuelve a aparecer <b>por su misma clave única</b>, y recién ahí se contabiliza. Los que salen de un movimiento del banco sin documento que lo respalde nunca se contabilizan solos —el documento es el que dice a qué cuentas va— y quedan marcados para revisión manual. Si un pendiente lleva dos períodos o más sin resolverse, sale el aviso.</p>
             <p><b>7. Cerrar un pendiente a mano.</b> Hay movimientos que nunca van a cruzar porque el archivo los trae con otro identificador, y si nadie los toca arrastran para siempre. Para eso la hoja <b>Pendientes</b> tiene la última columna, <b>Cerrado a mano (motivo)</b>, vacía y lista para escribir. Si el mes que viene ese Excel vuelve como entrada y la celda tiene texto, el pendiente deja de arrastrarse y pasa a la hoja <b>Cerrados a mano</b> con el motivo, para que quede el rastro de quién lo cerró y por qué. <b>Un pendiente cerrado a mano nunca entra al asiento:</b> lo cerró una persona escribiendo, no una clave única, y eso no alcanza para contabilizar. Si el movimiento aparece de verdad por su clave, manda la clave: se resuelve por las buenas y se contabiliza, aunque la celda esté escrita.</p>
-            <p><b>8. Tarjeta Naranja.</b> Naranja no liquida por Payway: acredita directo por transferencia interbancaria, y por eso no hay liquidación que abra el bruto, el arancel y las retenciones. Esos créditos se reconocen por el <b>CUIT de Tarjeta Naranja en el detalle</b> del extracto —no por el concepto, que es genérico y puede traer plata de cualquiera— y entran <b>enteros</b>, por lo acreditado, a la cuenta <i>Tarjeta Naranja a Conciliar</i>. Quedan listados en la hoja <b>Tarjeta Naranja</b> del Excel. Es una cuenta puente: se cancela cuando aparezca la liquidación de Naranja y se puedan contabilizar los descuentos.</p>
+            <p><b>8. Tarjeta Naranja.</b> Naranja no liquida por Payway: acredita directo por transferencia interbancaria. Los créditos del banco se reconocen por el <b>CUIT de Tarjeta Naranja en el detalle</b> del extracto —no por el concepto, que es genérico—. Si se adjunta la liquidación de Naranja (<code>.xlsx</code>, opcional), la clave única es <b>neto de la liquidación = importe del crédito en el banco</b> (centavos exactos). Los que cruzan entran al asiento con el bruto y todos los descuentos abiertos, igual que Payway. Los que no cruzan siguen yendo a la cuenta puente <i>Tarjeta Naranja a Conciliar</i>.</p>
           </div>
           <div class="regla">
             <p class="cita">Los seis archivos</p>
             <p><b>Liquidaciones Payway.</b> El ZIP de comprobantes del mes, o los PDF sueltos. De ahí salen el total presentado por día y el desglose de descuentos de cada establecimiento.</p>
             <p><b>Extracto del banco.</b> El movimiento de la cuenta corriente en Excel. Es el que manda: define el período y es contra el que se controla todo.</p>
             <p><b>Transferencias QR.</b> El detalle de cobros con QR. Puede traer más de un mes: se usan solo los del período del extracto.</p>
+            <p><b>Liquidaciones de Tarjeta Naranja</b> (opcional). El resumen de liquidación en Excel con el monto bruto, los descuentos y el neto. Si no se adjunta, los créditos de Naranja en el extracto van a la cuenta puente.</p>
             <p><b>Liberaciones de Mercado Pago</b> y <b>resumen de cuenta de Mercado Pago</b>. El primero trae el bruto, la comisión y los impuestos de cada operación; el segundo confirma que el dinero entró.</p>
             <p><b>Salida del mes anterior</b> <i>(opcional)</i>. El Excel que descargaste de esta misma pantalla el mes pasado. Sin él no se arrastra ningún pendiente y sale el aviso.</p>
           </div>
@@ -502,7 +503,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"
         integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb"
         crossorigin="anonymous"></script>
-<script src="conciliar.js?v=16"></script>
+<script src="conciliar.js?v=17"></script>
 <script>
 (function () {
   "use strict";
@@ -887,6 +888,7 @@
     qr: { nombre: "Transferencias QR", ext: ".xlsx" },
     libMp: { nombre: "Liberaciones Mercado Pago", ext: ".xlsx" },
     resumenMp: { nombre: "Resumen cuenta Mercado Pago", ext: ".xlsx" },
+    liqNaranja: { nombre: "Liquidaciones Tarjeta Naranja", ext: ".xlsx", opcional: true },
     previo: { nombre: "Mes anterior", ext: ".xlsx · salida de esta pantalla", opcional: true },
   };
   const OBLIGATORIOS_B = Object.keys(TIPOS_B).filter((t) => !TIPOS_B[t].opcional);
@@ -998,6 +1000,7 @@
         liquidaciones: liquidaciones,
         extracto: uno("extracto"), qr: uno("qr"),
         libMp: uno("libMp"), resumenMp: uno("resumenMp"),
+        liqNaranja: porTipo.liqNaranja ? uno("liqNaranja") : null,
         previo: porTipo.previo ? uno("previo") : null,
       });
       const leidos = [];
@@ -1033,8 +1036,8 @@
     const estsOk = cuenta(ests, (e) => e.cruza);
     const estsSin = cuenta(ests, (e) => e.sinMovimientos);
     const estsNo = ests.length - estsOk - estsSin;
-    const cruzan = cuenta(dias, (d) => d.cruza) + cuenta(qrF, (r) => r.cruza) + cuenta(R.mpCruce, (r) => r.cruza);
-    const noCruzan = cuenta(dias, (d) => !d.cruza) + cuenta(qrF, (r) => !r.cruza) + cuenta(R.mpCruce, (r) => !r.cruza);
+    const cruzan = cuenta(dias, (d) => d.cruza) + cuenta(qrF, (r) => r.cruza) + cuenta(R.mpCruce, (r) => r.cruza) + R.naranja.cruzados.length;
+    const noCruzan = cuenta(dias, (d) => !d.cruza) + cuenta(qrF, (r) => !r.cruza) + cuenta(R.mpCruce, (r) => !r.cruza) + R.naranja.sinLiq.length + R.naranja.sinBanco.length;
     const acreditado = A.t.banco + A.t.mp;
     const pend = R.pendientes.nuevos.length + R.pendientes.siguen.length;
 
@@ -1064,6 +1067,8 @@
            cuenta(qrF, (r) => r.cruza), cuenta(qrF, (r) => !r.cruza)) +
       ctrl("Liberaciones de Mercado Pago contra el resumen de cuenta", "SOURCE_ID = REFERENCE_ID",
            cuenta(R.mpCruce, (r) => r.cruza), cuenta(R.mpCruce, (r) => !r.cruza)) +
+      (R.liqNaranja ? ctrl("Liquidaciones Naranja contra el extracto", "neto de la liquidación = crédito del banco",
+           R.naranja.cruzados.length, R.naranja.sinLiq.length + R.naranja.sinBanco.length) : "") +
       `</tbody>`;
 
     $("tablaAsientoB").innerHTML =
