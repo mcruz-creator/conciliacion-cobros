@@ -137,6 +137,7 @@
       const filas = filasHoja(leerLibro(bytes)).slice(0, 8);
       const txt = filas.map((f) => f.join(" ")).join(" ");
       if (txt.includes("Listado de caja")) return "recibos";
+      if (txt.indexOf("N° de comercio") >= 0 && txt.indexOf("Monto bruto") >= 0 && txt.indexOf("Monto neto") >= 0) return "naranja";
       if (txt.toUpperCase().includes("MERCADO PAGO")) return "mp";
     }
     return null;
@@ -212,6 +213,20 @@
                 "Pagador: " + g(f, "PAGADOR")].join(" - "),
       terminal: [g(f, "NOMBRE DE LOCAL"), g(f, "NOMBRE DE CAJA")].join(" ").trim(),
     }));
+  }
+
+  function leerNaranjaCobros(bytes) {
+    var filas = root.BancosLect.leerNaranja(bytes);
+    return filas.map(function (r) {
+      return {
+        fuente: "NARANJA",
+        fecha: r.fecha,
+        importe: r.bruto,
+        referencia: "Naranja Liq " + r.nroLiq,
+        detalle: r.tipoLiq + " - Comercio " + r.comercio,
+        terminal: "Comercio " + r.comercio,
+      };
+    });
   }
 
   // ------------------------------------------------------------ conciliación
@@ -365,6 +380,7 @@
       } else if (tipo === "payway") movs = movs.concat(leerPayway(a.bytes));
       else if (tipo === "qr") movs = movs.concat(leerQr(a.bytes));
       else if (tipo === "mp") movs = movs.concat(leerMp(a.bytes));
+      else if (tipo === "naranja") movs = movs.concat(leerNaranjaCobros(a.bytes));
     }
 
     for (const t of ["recibos", "payway", "qr", "mp"]) {
@@ -401,7 +417,7 @@
   }
 
   function nombreTipo(t) {
-    return { recibos: "recibos (listado de caja)", payway: "movimientos Payway", qr: "QR Payway", mp: "Mercado Pago" }[t];
+    return { recibos: "recibos (listado de caja)", payway: "movimientos Payway", qr: "QR Payway", mp: "Mercado Pago", naranja: "Tarjeta Naranja" }[t];
   }
 
   function dedup(arr, fk) {

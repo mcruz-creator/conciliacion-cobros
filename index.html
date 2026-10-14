@@ -168,6 +168,7 @@
   .ficha.ok .sello { color: var(--verde); opacity: 1; animation: sellar .35s cubic-bezier(.2,1.6,.4,1); }
   .ficha.ok .tipo { color: var(--verde); }
   .ficha.falta .arch { color: var(--tinta-suave); font-style: italic; font-family: var(--serif); }
+  .fichas.cinco { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .fichas.seis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .fichas.seis .ficha { border-right: 1px solid var(--renglon); }
   .fichas.seis .ficha:nth-child(3n) { border-right: 0; }
@@ -343,12 +344,12 @@
     <div class="rotulo"><span class="num">I.</span><h2>Archivos del período</h2></div>
     <div id="zona" class="zona" tabindex="0" role="button" aria-label="Elegir archivos">
       <svg class="flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M12 3v13M6.5 10.5 12 16l5.5-5.5M4 20h16"/></svg>
-      <div class="grande">Soltá acá los cuatro archivos o <u>elegilos de la carpeta</u></div>
+      <div class="grande">Soltá acá los archivos del período o <u>elegilos de la carpeta</u></div>
       <div class="chico">Se reconocen solos por su contenido: el nombre y el orden no importan.</div>
     </div>
     <input id="entrada" type="file" multiple accept=".csv,.xls,.xlsx" hidden>
 
-    <div class="fichas" id="fichas"></div>
+    <div class="fichas cinco" id="fichas"></div>
     <ul class="ignorados" id="ignorados"></ul>
 
     <div class="acciones">
@@ -503,7 +504,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"
         integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb"
         crossorigin="anonymous"></script>
-<script src="conciliar.js?v=17"></script>
+<script src="conciliar.js?v=18"></script>
 <script>
 (function () {
   "use strict";
@@ -588,6 +589,7 @@
     payway: { nombre: "Payway", ext: ".csv · presentados" },
     qr: { nombre: "QR Payway", ext: ".csv · transferencias" },
     mp: { nombre: "Mercado Pago", ext: ".xlsx" },
+    naranja: { nombre: "Tarjeta Naranja", ext: ".xlsx", opcional: true },
   };
   function pintarLista() {
     const porTipo = {};
@@ -600,16 +602,17 @@
     }
     $("fichas").innerHTML = Object.entries(TIPOS).map(([t, info]) => {
       const nombres = porTipo[t];
-      return `<div class="ficha ${nombres ? "ok" : "falta"}">
+      const cls = nombres ? "ok" : (info.opcional ? "falta opcional" : "falta");
+      return `<div class="ficha ${cls}">
         <div class="sello">Recibido</div>
         <div class="tipo">${info.nombre}</div>
         <div class="ext">${info.ext}</div>
-        <div class="arch">${nombres ? nombres.map(esc).join("<br>") : "pendiente"}</div>
+        <div class="arch">${nombres ? nombres.map(esc).join("<br>") : (info.opcional ? "opcional" : "pendiente")}</div>
       </div>`;
     }).join("");
     $("ignorados").innerHTML = ignorados.map((n) => `<li>${esc(n)}: no se reconoce el formato, se va a ignorar</li>`).join("");
 
-    const faltan = Object.keys(TIPOS).filter((t) => !porTipo[t]);
+    const faltan = Object.keys(TIPOS).filter((t) => !TIPOS[t].opcional && !porTipo[t]);
     sePuedeConciliar = !!porTipo.recibos;
     // mientras se concilia el boton lo maneja el handler: pintarLista no lo pisa
     if (!conciliando) $("btnProcesar").disabled = !sePuedeConciliar;
