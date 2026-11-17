@@ -923,7 +923,11 @@
  *   - Cargo por Servicio Payway bonificado al 100%: no va al asiento.
  *   - Impuestos propios del banco (Imp. Déb. y Créd. e IIBB Acreditaciones): no
  *     van, se contabilizan en un asiento mensual aparte. Sí se muestran en el control.
- *   - Transferencias salientes de Mercado Pago (payout): fuera de esta sección.
+ *   - Transferencias salientes de Mercado Pago (payout) y sus reservas: fuera de
+ *     esta sección.
+ *   - Una liberación "payment" con importe negativo no es un cobro: es plata que
+ *     salió de la cuenta (pago a proveedor, débito de factura de Mercado Libre).
+ *     No entra al asiento y queda en Pendientes para contabilizarla aparte.
  *   - Base gravada y exenta van juntas en "Gastos bancarios".
  *   - Rendimientos de Mercado Pago: cuenta "Rendimiento Inversiones".
  *
@@ -1450,14 +1454,26 @@
   /**
    * Cruce C: liberaciones de Mercado Pago <-> resumen de cuenta, por
    * SOURCE_ID = REFERENCE_ID. Lo que no cruza no entra al asiento.
+   *
+   * Alcance de cada liberación:
+   *   cobro       payment o refund que suma a la cuenta. Es lo único que va a "Tarjetas".
+   *   saliente    payment con importe NEGATIVO: plata que salió de la cuenta de
+   *               Mercado Pago (pago a un proveedor, débito de una factura de
+   *               Mercado Libre). No es un cobro: afuera del asiento y a Pendientes.
+   *   rendimiento asset_management: interés de la cuenta remunerada.
+   *   fuera       transferencias salientes y sus reservas. Ni asiento ni Pendientes:
+   *               los pares de reserva suman cero y la transferencia se contabiliza
+   *               con el comprobante del proveedor, no con esta pantalla.
+   *   desconocido tipo que esta sección no sabe interpretar. Nunca al asiento.
    */
   const TIPOS_COBRO = ["payment", "refund"];
-  const TIPOS_FUERA = ["payout", "reserve_for_payout", "reserve_for_refund"];
+  const TIPOS_FUERA = ["payout", "reserve_for_payout", "reserve_for_refund", "reserve_for_payment"];
 
   function cruzarMp(liberaciones, resumen) {
     const ids = new Set(resumen.map((r) => r.id));
     return liberaciones.map((r) => {
-      const alcance = TIPOS_COBRO.indexOf(r.tipo) >= 0 ? "cobro"
+      const alcance = r.tipo === "payment" && r.neto < 0 ? "saliente"
+                    : TIPOS_COBRO.indexOf(r.tipo) >= 0 ? "cobro"
                     : r.tipo === "asset_management" ? "rendimiento"
                     : TIPOS_FUERA.indexOf(r.tipo) >= 0 ? "fuera" : "desconocido";
       const cruza = ids.has(r.id);
@@ -1702,7 +1718,18 @@
           importe: g.importe, contabiliza: false });
     }
     for (const r of mpCruce) {
-      if (r.cruza || r.alcance === "fuera") continue;
+      if (r.alcance === "fuera") continue;
+      // El pago saliente va a Pendientes SIEMPRE, aunque cruce. Que cruce solo
+      // significa que el resumen lo confirma, no que sea un cobro: no se contabiliza
+      // en este asiento, se contabiliza con el comprobante de la operación.
+      if (r.alcance === "saliente") {
+        p({ origen: "Mercado Pago", fecha: r.fecha, clave: "mp " + r.id,
+            concepto: 'Liberación "payment" con importe negativo: no es un cobro, es plata que ' +
+                      'salió de la cuenta de Mercado Pago. Contabilizála por separado.',
+            importe: r.neto, neto: r.neto, contabiliza: false });
+        continue;
+      }
+      if (r.cruza) continue;
       if (r.alcance === "rendimiento") {
         p({ origen: "Mercado Pago", fecha: r.fecha, clave: "mp " + r.id,
             concepto: "Rendimiento de Mercado Pago: " + r.motivo,
@@ -1855,10 +1882,17 @@
     const qrCruce = M.cruzarQr(qr, extracto);
     const mpCruce = M.cruzarMp(libMp, resumenMp);
 
+    for (const r of mpCruce.filter((x) => x.alcance === "saliente")) {
+      avisos.push("Mercado Pago " + r.id + ': liberación "payment" con importe negativo por ' +
+                  M.fmt(r.neto) + ". No es un cobro: es plata que salió de la cuenta. " +
+                  "No entra al asiento y queda en Pendientes para contabilizarla por separado.");
+    }
     const desconocidos = mpCruce.filter((r) => r.alcance === "desconocido");
     for (const r of desconocidos) {
       avisos.push("Mercado Pago " + r.id + ': tipo de liberación "' + r.tipo +
-                  '" que esta sección no conoce. No entra al asiento, queda en Pendientes.');
+                  '" que esta sección no conoce. No entra al asiento.' +
+                  (r.cruza ? " Cruza contra el resumen, así que no queda en Pendientes: revisalo a mano."
+                           : " Queda en Pendientes."));
     }
 
     const liqNaranja = entradas.liqNaranja ? L.leerNaranja(entradas.liqNaranja) : null;
@@ -1967,8 +2001,10 @@
       ["FUERA DE ESTE ASIENTO", "Cantidad", "Importe"],
       ...R.impBanco.map((x) => [x.concepto + " (va en el asiento mensual de impuestos)", x.cant, pesos(x.importe)]),
       ["Transferencias salientes de Mercado Pago (fuera del alcance)",
-       R.mpCruce.filter((r) => r.alcance === "fuera").length,
+       R.mpCruce.filter((r) => r.tipo === "payout").length,
        pesos(R.mpCruce.filter((r) => r.alcance === "fuera").reduce((a, r) => a + r.neto, 0))],
+      ["Renglones de reserva que las acompañan (suman cero entre sí)",
+       R.mpCruce.filter((r) => r.alcance === "fuera" && r.tipo !== "payout").length, pesos(0)],
       [],
       ["ARCHIVOS LEÍDOS"],
       ...leidos.map((x) => [x.tipo, x.nombre]),
