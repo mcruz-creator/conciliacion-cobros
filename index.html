@@ -435,7 +435,7 @@
         <div class="grande">Soltá acá los cinco archivos del mes o <u>elegilos de la carpeta</u></div>
         <div class="chico">Se reconocen solos por su contenido. El sexto —la salida de esta misma pantalla el mes pasado— es opcional, y es lo único que arrastra lo que quedó pendiente.</div>
       </div>
-      <input id="entradaB" type="file" multiple accept=".zip,.pdf,.xls,.xlsx" hidden>
+      <input id="entradaB" type="file" multiple accept=".zip,.pdf,.xls,.xlsx,.csv" hidden>
 
       <div class="fichas seis" id="fichasB"></div>
       <ul class="ignorados" id="ignoradosB"></ul>
@@ -488,7 +488,7 @@
             <p class="cita">Los seis archivos</p>
             <p><b>Liquidaciones Payway.</b> El ZIP de comprobantes del mes, o los PDF sueltos. De ahí salen el total presentado por día y el desglose de descuentos de cada establecimiento.</p>
             <p><b>Extracto del banco.</b> El movimiento de la cuenta corriente en Excel. Es el que manda: define el período y es contra el que se controla todo.</p>
-            <p><b>Transferencias QR.</b> El detalle de cobros con QR. Puede traer más de un mes: se usan solo los del período del extracto.</p>
+            <p><b>Transferencias QR.</b> El detalle de cobros con QR, en Excel o en el .csv que baja Payway: los dos traen las mismas columnas y se reconocen solos. Puede traer más de un mes: se usan solo los del período del extracto.</p>
             <p><b>Liquidaciones de Tarjeta Naranja</b> (opcional). El resumen de liquidación en Excel con el monto bruto, los descuentos y el neto. Si no se adjunta, los créditos de Naranja en el extracto van a la cuenta puente.</p>
             <p><b>Liberaciones de Mercado Pago</b> y <b>resumen de cuenta de Mercado Pago</b>. El primero trae el bruto, la comisión y los impuestos de cada operación; el segundo confirma que el dinero entró.</p>
             <p><b>Salida del mes anterior</b> <i>(opcional)</i>. El Excel que descargaste de esta misma pantalla el mes pasado. Sin él no se arrastra ningún pendiente y sale el aviso.</p>
@@ -506,7 +506,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"
         integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb"
         crossorigin="anonymous"></script>
-<script src="conciliar.js?v=19"></script>
+<script src="conciliar.js?v=20"></script>
 <script>
 (function () {
   "use strict";
@@ -933,7 +933,7 @@
   const TIPOS_B = {
     liqPayway: { nombre: "Liquidaciones Payway", ext: ".zip · .pdf", varios: true },
     extracto: { nombre: "Extracto del banco", ext: ".xlsx · cuenta corriente" },
-    qr: { nombre: "Transferencias QR", ext: ".xlsx" },
+    qr: { nombre: "Transferencias QR", ext: ".xlsx · .csv" },
     libMp: { nombre: "Liberaciones Mercado Pago", ext: ".xlsx" },
     resumenMp: { nombre: "Resumen cuenta Mercado Pago", ext: ".xlsx" },
     liqNaranja: { nombre: "Liquidaciones Tarjeta Naranja", ext: ".xlsx", opcional: true },

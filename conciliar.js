@@ -969,8 +969,10 @@
     const s = String(v).trim();
     let m = s.match(/^(\d{4})-(\d\d)-(\d\d)/);            // 2026-08-31 / ISO largo
     if (m) return m[1] + "-" + m[2] + "-" + m[3];
-    m = s.match(/^(\d\d)[/-](\d\d)[/-](\d{4})/);          // 31/08/2026 y 01-08-2026
-    if (m) return m[3] + "-" + m[2] + "-" + m[1];
+    // el Detalle de Transferencias en .csv escribe el día y el mes sin el cero
+    // de adelante ("9/10/2026"), así que se rellenan.
+    m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);    // 31/08/2026, 01-08-2026 y 9/10/2026
+    if (m) return m[3] + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0");
     return "";
   }
 
@@ -997,6 +999,30 @@
       .map((f) => Object.fromEntries(cab.map((c, i) => [c, f[i]])));
   }
 
+  /**
+   * El Detalle de Transferencias de QR viene en .xlsx o en el .csv con punto y
+   * coma que baja Payway. Un .xlsx es un ZIP ("PK") y un .xls un contenedor OLE;
+   * cualquier otro contenido es texto, así que el formato se reconoce por el
+   * contenido y no por el nombre del archivo.
+   */
+  function esLibro(bytes) {
+    return (bytes[0] === 0x50 && bytes[1] === 0x4b) || (bytes[0] === 0xd0 && bytes[1] === 0xcf);
+  }
+
+  function decodificar(bytes) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch (e) {
+      return new TextDecoder("windows-1252").decode(bytes);
+    }
+  }
+
+  /** csv con punto y coma -> la misma matriz que devuelve filas(), para reusar objetos() */
+  function filasCsv(texto) {
+    return texto.replace(/^\uFEFF/, "").split(/\r?\n/).filter((l) => l.trim() !== "")
+      .map((l) => l.split(";").map((c) => c.trim().replace(/^'|'$/g, "")));
+  }
+
   // ------------------------------------------------------- lector de PDF
   // El navegador inyecta pdf.js; Node inyecta pdfjs-dist. El módulo no sabe cuál es.
   let leerPdf = null;
@@ -1006,6 +1032,12 @@
   function detectar(nombre, bytes) {
     const ext = String(nombre).toLowerCase().split(".").pop();
     if (ext === "zip" || ext === "pdf") return "liqPayway";
+    if (ext === "csv") {
+      // el encabezado de Movimientos Payway también trae "QR ID", pero no
+      // "MONTO NETO": ese archivo es de la otra pantalla y acá no sirve.
+      const cab = decodificar(bytes.slice(0, 4000));
+      return cab.indexOf("QR ID") >= 0 && cab.indexOf("MONTO NETO") >= 0 ? "qr" : null;
+    }
     if (ext !== "xlsx" && ext !== "xls") return null;
     let wb;
     try { wb = leerLibro(bytes); } catch (e) { return null; }
@@ -1109,7 +1141,7 @@
   const COLS_P = /^P_/i;
 
   function leerQr(bytes) {
-    const mat = filas(leerLibro(bytes));
+    const mat = esLibro(bytes) ? filas(leerLibro(bytes)) : filasCsv(decodificar(bytes));
     const iCab = mat.findIndex((f) => f.some((c) => String(c).trim() === "QR ID"));
     if (iCab < 0) throw new Error("El archivo de QR no tiene la fila de encabezados con 'QR ID'");
     return objetos(mat, iCab).filter((r) => String(r["QR ID"] == null ? "" : r["QR ID"]).trim() !== "").map((r, i) => {
