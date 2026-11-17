@@ -1010,7 +1010,18 @@
   const periodoDe = (i) => (i ? i.slice(0, 7) : "");
   function nombrePeriodo(p) {
     if (!p) return "";
+    if (!/^\d{4}-\d{2}$/.test(p)) return p;   // ya viene con nombre: se deja como está
     return MESES[Number(p.slice(5, 7)) - 1] + " " + p.slice(0, 4);
+  }
+
+  /** "octubre 2026" -> "2026-10". El Excel guarda el nombre del período, no la clave. */
+  function periodoDeNombre(v) {
+    const t = String(v == null ? "" : v).trim();
+    const m = t.toLowerCase().match(/^([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1]+)\s+(\d{4})$/);
+    if (!m) return t;
+    const i = MESES.indexOf(m[1]);
+    if (i < 0) return t;
+    return m[2] + "-" + (i < 9 ? "0" : "") + (i + 1);
   }
 
   function leerLibro(bytes) { return XLSX.read(bytes, { type: "array" }); }
@@ -1243,6 +1254,16 @@
   // motivo lo escribió alguien, no una clave única, y eso no alcanza para contabilizar.
   const CAB_PENDIENTES = ["Período de origen", "Origen", "Fecha", "Clave única", "Concepto", "Importe", "Períodos pendiente", "Cerrado a mano (motivo)"];
 
+  // El desglose contable con que un pendiente va a contabilizarse cuando se resuelva
+  // viaja en las últimas diez columnas de la hoja, y hay que leerlo de vuelta: el
+  // asiento del mes que viene se arma con esos importes, no con el "Importe" suelto.
+  // "Contabiliza" tiene tres estados a propósito: "sí", "no" y vacío. Vacío
+  // es un Excel que no salió de esta pantalla; no se contabiliza igual, pero sale
+  // el aviso en lugar de hacerlo en silencio.
+  const COL_PEND = { bruto: "Bruto", neto: "Neto", arancel: "Arancel", financiero: "Costo financiero",
+    iva: "IVA", retIibb: "Ret. IIBB", retAfip: "Ret. AFIP",
+    impDebCred: "Imp. déb. y créd.", rendimiento: "Rendimiento" };
+
   function leerPendientes(bytes) {
     const wb = leerLibro(bytes);
     const mat = filas(wb, "Pendientes");
@@ -1250,16 +1271,22 @@
     if (iCab < 0) return [];
     return objetos(mat, iCab)
       .filter((r) => String(r["Clave única"] == null ? "" : r["Clave única"]).trim() !== "")
-      .map((r) => ({
-        periodo: String(r["Período de origen"] == null ? "" : r["Período de origen"]).trim(),
-        origen: String(r["Origen"] == null ? "" : r["Origen"]).trim(),
-        fecha: iso(r["Fecha"]) || String(r["Fecha"] == null ? "" : r["Fecha"]).trim(),
-        clave: String(r["Clave única"]).trim(),
-        concepto: String(r["Concepto"] == null ? "" : r["Concepto"]).trim(),
-        importe: cents(r["Importe"]),
-        meses: Number(r["Períodos pendiente"]) || 1,
-        cerrado: String(r["Cerrado a mano (motivo)"] == null ? "" : r["Cerrado a mano (motivo)"]).trim(),
-      }));
+      .map((r) => {
+        const cont = String(r["Contabiliza"] == null ? "" : r["Contabiliza"]).trim().toLowerCase();
+        const v = {
+          periodo: periodoDeNombre(r["Período de origen"]),
+          origen: String(r["Origen"] == null ? "" : r["Origen"]).trim(),
+          fecha: iso(r["Fecha"]) || String(r["Fecha"] == null ? "" : r["Fecha"]).trim(),
+          clave: String(r["Clave única"]).trim(),
+          concepto: String(r["Concepto"] == null ? "" : r["Concepto"]).trim(),
+          importe: cents(r["Importe"]),
+          meses: Number(r["Períodos pendiente"]) || 1,
+          cerrado: String(r["Cerrado a mano (motivo)"] == null ? "" : r["Cerrado a mano (motivo)"]).trim(),
+          contabiliza: cont === "" ? null : (cont === "sí" || cont === "si"),
+        };
+        for (const k in COL_PEND) v[k] = cents(r[COL_PEND[k]]);
+        return v;
+      });
   }
 
   // ------------------------------------------------- lectura: liquidaciones Tarjeta Naranja
@@ -1873,6 +1900,13 @@
     if (entradas.previo) {
       previos = L.leerPendientes(entradas.previo);
       if (!previos.length) avisos.push("El Excel del mes anterior no tiene pendientes para arrastrar.");
+      const sinDesglose = previos.filter((v) => v.contabiliza === null);
+      if (sinDesglose.length) {
+        avisos.push(sinDesglose.length + ' pendiente(s) del mes anterior vienen con la columna ' +
+                    '"Contabiliza" vacía, así que ese Excel no lo escribió esta pantalla. ' +
+                    "Si alguno se resuelve este mes NO va a entrar al asiento: hay que contabilizarlo a mano. " +
+                    "Claves: " + sinDesglose.map((v) => v.clave).join(", ") + ".");
+      }
     } else {
       avisos.push("No adjuntaste el Excel del mes anterior: no se arrastra ningún pendiente. " +
                   "Si el mes pasado quedó algo sin cruzar, va a quedar afuera.");
@@ -1946,8 +1980,10 @@
   function filaPend(v) {
     return [nombrePeriodo(v.periodo), v.origen, fx(v.fecha), v.clave, v.concepto, pesos(v.importe), v.meses,
             v.cerrado || "",
-            v.contabiliza ? "sí" : "no", pesos(v.bruto), pesos(v.neto), pesos(v.arancel), pesos(v.financiero),
-            pesos(v.iva), pesos(v.retIibb), pesos(v.retAfip), pesos(v.impDebCred), pesos(v.rendimiento || 0)];
+            v.contabiliza == null ? "" : v.contabiliza ? "sí" : "no",
+            pesos(v.bruto || 0), pesos(v.neto || 0), pesos(v.arancel || 0), pesos(v.financiero || 0),
+            pesos(v.iva || 0), pesos(v.retIibb || 0), pesos(v.retAfip || 0), pesos(v.impDebCred || 0),
+            pesos(v.rendimiento || 0)];
   }
 
   function armarLibro(R, leidos) {
