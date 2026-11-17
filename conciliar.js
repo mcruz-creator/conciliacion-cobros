@@ -30,6 +30,18 @@
  *      ni pagador, ni comisión. Se apartan ANTES de conciliar y se informan
  *      aparte. Se mira el medio de pago, no el número de identificación: ese
  *      también viene vacío en cobros reales de pacientes.
+ *   8. Movimientos Payway: desde octubre de 2026 Payway reemplazó el reporte de
+ *      "presentados" por "Movimientos", que trae la terminal y el QR juntos. Se
+ *      aceptan los dos formatos. Del nuevo entran los cobros ACREDITADOS y las
+ *      devoluciones acreditadas (en negativo). Quedan afuera los RECHAZADOS y los
+ *      pares anulación + cobro, apareados por autorización + tarjeta + terminal +
+ *      importe; si el apareo no da exactamente uno, no se adivina: la anulación se
+ *      informa sin par y el cobro sigue conciliando. Los APROBADOS sin acreditar
+ *      entran igual y se informan aparte.
+ *   9. El Detalle de Transferencias de QR es un subconjunto de Movimientos Payway.
+ *      Si se cargan los dos, la transferencia que está en los dos se cuenta una
+ *      sola vez, por fecha + terminal + cupón + importe (clave verificada única en
+ *      los dos archivos). La que NO esté en Movimientos se concilia igual.
  *   En las tres primeras, las columnas "solo MP" (videoconsultas) solo se cruzan contra
  *   Mercado Pago; un grupo que empata en cantidad pero no tiene suficientes
  *   movimientos de MP para sus videoconsultas NO cierra. Todo lo demás queda
@@ -129,6 +141,9 @@
     const ext = nombre.toLowerCase().split(".").pop();
     if (ext === "csv") {
       const cab = decodificar(bytes.slice(0, 3000));
+      // ojo: el encabezado de Movimientos Payway también contiene "QR ID",
+      // así que tiene que mirarse ANTES que el Detalle de Transferencias
+      if (cab.includes("Fecha Aprobado") && cab.includes("Monto bruto")) return "paywayMov";
       if (cab.includes("Detalle de Transferencias") || cab.includes("QR ID")) return "qr";
       if (cab.includes("NUM.CUPON")) return "payway";
       return null;
@@ -186,15 +201,108 @@
     }));
   }
 
+  /** devuelve "AAAA-MM-DD" venga la fecha como ISO o como 31/10/2026 */
+  function fechaTexto(v) {
+    const s = String(v == null ? "" : v).trim();
+    return s.indexOf("/") >= 0 ? ddmmyyyyAIso(s) : s.slice(0, 10);
+  }
+
+  /**
+   * Identifica una misma transacción de QR en los dos reportes de Payway.
+   * Verificado contra los archivos reales: la clave es única en el Detalle y
+   * en Movimientos (0 repetidas en septiembre y en octubre), así que la
+   * deduplicación no desempata nada.
+   */
+  const claveQr = (fecha, terminal, cupon, importe) =>
+    [fecha, String(terminal).trim(), String(cupon).trim(), importe].join("|");
+
   function leerQr(bytes) {
-    return parseCsv(decodificar(bytes), 1).map((r) => ({
-      fuente: "QR",
-      fecha: String(r["FECHA DE VENTA"]).slice(0, 10),
-      importe: cents(r["MONTO BRUTO"]),
-      referencia: `QR ${r["QR ID"]} / Cupón ${r["NRO CUPON"]}`,
-      detalle: r["ESTADO"],
-      terminal: `Terminal ${r["TERMINAL LOGICA"]}`,
-    }));
+    return parseCsv(decodificar(bytes), 1).map((r) => {
+      const fecha = fechaTexto(r["FECHA DE VENTA"]);
+      const importe = cents(r["MONTO BRUTO"]);
+      return {
+        fuente: "QR",
+        fecha,
+        importe,
+        referencia: `QR ${r["QR ID"]} / Cupón ${r["NRO CUPON"]}`,
+        detalle: r["ESTADO"],
+        terminal: `Terminal ${r["TERMINAL LOGICA"]}`,
+        claveQr: claveQr(fecha, r["TERMINAL LOGICA"], r["NRO CUPON"], importe),
+      };
+    });
+  }
+
+  /**
+   * Movimientos Payway: desde octubre de 2026 un solo reporte trae la terminal
+   * y el QR juntos, y reemplaza a "Payway presentados" y al "Detalle de
+   * Transferencias" del lado de los cobros. Reglas acordadas:
+   *   - RECHAZADO                 -> afuera, se informa aparte
+   *   - Anulación y su cobro      -> afuera los dos, se informan aparte
+   *   - Devolución acreditada     -> entra en importe negativo
+   *   - Cobro ACREDITADO          -> entra
+   *   - Cobro APROBADO sin anular -> entra, se informa pendiente de acreditación
+   * La anulación se aparea con un único cobro por autorización + tarjeta +
+   * terminal + importe. Si no da exactamente uno no se adivina: la anulación
+   * queda informada sin par y el cobro sigue en la conciliación.
+   */
+  function leerPaywayMov(bytes) {
+    const uno = (r) => {
+      const tipo = String(r["Tipo de operacion"]).trim();
+      const esDev = tipo === "Devolución";
+      const bruto = cents(r["Monto bruto"]);
+      const importe = esDev ? -bruto : bruto;
+      const fecha = fechaTexto(r["Fecha Aprobado"]);
+      const esQr = String(r["Canal"]).trim() === "QR - Terminal";
+      return {
+        fuente: "PAYWAY",
+        fecha,
+        importe,
+        referencia: `Cupón ${String(r["Nro comprobante"]).trim()} / Aut ${String(r["Nro Autorizacion"]).trim()}`,
+        detalle: [tipo, String(r["Canal"]).trim(), String(r["Medio de pago"]).trim(),
+                  String(r["Billetera"]).trim(), String(r["Info medio de pago"]).trim()]
+                 .filter((x) => x).join(" - "),
+        terminal: `Terminal ${String(r["Nro terminal"]).trim()}`,
+        tipoOp: tipo,
+        // ojo: no se puede llamar "estado", que es el campo del estado de
+        // conciliacion y lo sobreescribe el motor mas adelante
+        estadoPw: String(r["Estado actual"]).trim(),
+        tid: String(r["TID"]).trim(),
+        acreditado: fechaTexto(r["Fecha Acreditado"]),
+        aut: String(r["Nro Autorizacion"]).trim(),
+        tarjeta: String(r["Info medio de pago"]).trim(),
+        nroTerminal: String(r["Nro terminal"]).trim(),
+        cupon: String(r["Nro comprobante"]).trim(),
+        claveQr: esQr ? claveQr(fecha, r["Nro terminal"], r["Nro comprobante"], importe) : "",
+      };
+    };
+
+    const movs = [];
+    const rechazados = [];
+    const anulaciones = [];
+    const anulSinPar = [];
+    const anul = [];
+    for (const r of parseCsv(decodificar(bytes), 0)) {
+      const m = uno(r);
+      if (m.estadoPw === "RECHAZADO") {
+        rechazados.push(m);
+      } else if (m.tipoOp === "Anulación") {
+        anul.push(m);
+      } else {
+        movs.push(m);
+      }
+    }
+    for (const a of anul) {
+      const pares = movs.filter((m) => m.aut === a.aut && m.tarjeta === a.tarjeta &&
+                                       m.nroTerminal === a.nroTerminal && m.importe === a.importe);
+      if (pares.length === 1) {
+        movs.splice(movs.indexOf(pares[0]), 1);
+        anulaciones.push({ anulacion: a, cobro: pares[0] });
+      } else {
+        anulSinPar.push({ anulacion: a, candidatos: pares.length });
+      }
+    }
+    const pendAcred = movs.filter((m) => m.estadoPw === "APROBADO");
+    return { movs, rechazados, anulaciones, anulSinPar, pendAcred };
   }
 
   function leerMp(bytes) {
@@ -365,6 +473,7 @@
     const leidos = [];
     let recibos = [];
     let movs = [];
+    let pmov = { rechazados: [], anulaciones: [], anulSinPar: [], pendAcred: [] };
 
     for (const a of archivos) {
       const tipo = detectar(a.nombre, a.bytes);
@@ -378,19 +487,50 @@
         if (r.faltan.length) avisos.push(`"${a.nombre}": no tiene las columnas ${r.faltan.join(", ")}.`);
         recibos = recibos.concat(r.filas);
       } else if (tipo === "payway") movs = movs.concat(leerPayway(a.bytes));
-      else if (tipo === "qr") movs = movs.concat(leerQr(a.bytes));
+      else if (tipo === "paywayMov") {
+        const p = leerPaywayMov(a.bytes);
+        movs = movs.concat(p.movs);
+        for (const k of ["rechazados", "anulaciones", "anulSinPar", "pendAcred"]) {
+          pmov[k] = pmov[k].concat(p[k]);
+        }
+      } else if (tipo === "qr") movs = movs.concat(leerQr(a.bytes));
       else if (tipo === "mp") movs = movs.concat(leerMp(a.bytes));
       else if (tipo === "naranja") movs = movs.concat(leerNaranjaCobros(a.bytes));
     }
 
+    const hayMov = leidos.some((l) => l.tipo === "paywayMov");
     for (const t of ["recibos", "payway", "qr", "mp"]) {
-      if (!leidos.some((l) => l.tipo === t)) avisos.push(`Falta el archivo de ${nombreTipo(t)}.`);
+      if (leidos.some((l) => l.tipo === t)) continue;
+      // Movimientos Payway reemplaza a los dos reportes viejos: no se reclaman
+      if (hayMov && (t === "payway" || t === "qr")) continue;
+      avisos.push(`Falta el archivo de ${nombreTipo(t)}.`);
     }
     if (!recibos.length) throw new Error("No hay listado de caja (recibos): no se puede conciliar.");
 
     // si se cargó dos veces el mismo archivo, no duplicar
     recibos = dedup(recibos, (r) => [r.nroRecibo, r.columna, r.importe, r.fecha].join("|"));
     movs = dedup(movs, (m) => [m.fuente, m.referencia, m.importe, m.fecha].join("|"));
+
+    // El Detalle de Transferencias es un subconjunto exacto de Movimientos
+    // Payway (las transferencias cobradas y acreditadas). Si se cargan los dos,
+    // la transferencia que ya vino en Movimientos no se cuenta de nuevo. La que
+    // NO esté en Movimientos se concilia igual: no se descarta nada a ciegas.
+    let qrDup = { cant: 0, importe: 0 };
+    let qrSoloDetalle = { cant: 0, importe: 0 };
+    if (hayMov) {
+      const enMov = new Set(movs.filter((m) => m.fuente === "PAYWAY" && m.claveQr).map((m) => m.claveQr));
+      const dup = movs.filter((m) => m.fuente === "QR" && enMov.has(m.claveQr));
+      qrDup = { cant: dup.length, importe: dup.reduce((a, m) => a + m.importe, 0) };
+      movs = movs.filter((m) => !(m.fuente === "QR" && enMov.has(m.claveQr)));
+      const propias = movs.filter((m) => m.fuente === "QR");
+      qrSoloDetalle = { cant: propias.length, importe: propias.reduce((a, m) => a + m.importe, 0) };
+      if (qrDup.cant) {
+        avisos.push(`Detalle de Transferencias: ${qrDup.cant} transferencias ya venían en Movimientos Payway, no se cuentan dos veces.`);
+      }
+      if (qrSoloDetalle.cant) {
+        avisos.push(`Detalle de Transferencias: ${qrSoloDetalle.cant} transferencias NO están en Movimientos Payway y se conciliaron igual.`);
+      }
+    }
 
     // regla 5: los movimientos pagados por la propia empresa no se concilian
     const propios = movs.filter(pagadorPropio);
@@ -412,7 +552,19 @@
     const hasta = fechas[fechas.length - 1];
 
     const resultado = resumir(recibos, movs, cfg, desde, hasta, anulados, propios, rendimientos);
-    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg, anulados, propios, rendimientos);
+    const sumar = (a) => a.reduce((x, m) => x + m.importe, 0);
+    resultado.payway = {
+      rechazados: { cant: pmov.rechazados.length, importe: sumar(pmov.rechazados) },
+      anuladas: {
+        pares: pmov.anulaciones.length,
+        importe: sumar(pmov.anulaciones.map((p) => p.cobro)),
+        sinPar: pmov.anulSinPar.length,
+      },
+      pendAcred: { cant: pmov.pendAcred.length, importe: sumar(pmov.pendAcred) },
+      qrDup,
+      qrSoloDetalle,
+    };
+    const libro = armarLibro(recibos, movs, pares, resultado, leidos, cfg, anulados, propios, rendimientos, pmov);
     return { resultado, avisos, leidos, libro, nombreSalida: `Conciliacion_${desde}_${hasta}.xlsx` };
   }
 
@@ -446,7 +598,7 @@
         .map((c) => ({ columna: c, cant: recibos.filter((r) => r.columna === c).length,
                        importe: suma(recibos.filter((r) => r.columna === c)) }))
         .filter((x) => x.cant),
-      movsPorFuente: ["PAYWAY", "QR", "MP"]
+      movsPorFuente: ["PAYWAY", "QR", "MP", "NARANJA"]
         .map((f) => ({ fuente: f, cant: movs.filter((m) => m.fuente === f).length,
                        importe: suma(movs.filter((m) => m.fuente === f)) }))
         .filter((x) => x.cant),
@@ -511,7 +663,7 @@
     return ws;
   }
 
-  function armarLibro(recibos, movs, pares, R, leidos, cfg, anulados, propios, rendimientos) {
+  function armarLibro(recibos, movs, pares, R, leidos, cfg, anulados, propios, rendimientos, pmov) {
     const wb = XLSX.utils.book_new();
     const f = (x) => fechaExcel(x);
 
@@ -547,6 +699,23 @@
       ["Anulados y neteados (regla 4)", R.anulados.rec, 0, ""],
       ["Pagador Grupo Oroño (estos no tienen recibo)", "", pesos(R.pagadorPropio.importe), R.pagadorPropio.cant],
       ["Rendimientos de Mercado Pago (estos no tienen recibo)", "", pesos(R.rendimientos.importe), R.rendimientos.cant],
+      ...(R.payway && R.payway.rechazados.cant + R.payway.anuladas.pares +
+                      R.payway.pendAcred.cant + R.payway.qrDup.cant > 0
+        ? [[],
+           ["MOVIMIENTOS PAYWAY APARTADOS", "Cantidad", "Importe"],
+           ["Rechazados (no entran)", R.payway.rechazados.cant, pesos(R.payway.rechazados.importe)],
+           ["Anulados: cobro y anulación, los dos afuera", R.payway.anuladas.pares * 2, pesos(R.payway.anuladas.importe)],
+           ...(R.payway.anuladas.sinPar
+             ? [["Anulaciones sin un único cobro que les corresponda (revisar a mano)", R.payway.anuladas.sinPar, ""]]
+             : []),
+           ["Pendientes de acreditación (entran igual)", R.payway.pendAcred.cant, pesos(R.payway.pendAcred.importe)],
+           ["Transferencias del Detalle que ya venían en Movimientos (no se cuentan dos veces)",
+            R.payway.qrDup.cant, pesos(R.payway.qrDup.importe)],
+           ...(R.payway.qrSoloDetalle.cant
+             ? [["Transferencias que solo están en el Detalle (se conciliaron igual)",
+                 R.payway.qrSoloDetalle.cant, pesos(R.payway.qrSoloDetalle.importe)]]
+             : [])]
+        : []),
       [],
       ["ARCHIVOS LEÍDOS"],
       ...leidos.map((l) => [nombreTipo(l.tipo), l.nombre]),
@@ -601,6 +770,46 @@
         .map((x) => [f(x.fecha), pesos(x.importe), x.referencia]);
       XLSX.utils.book_append_sheet(wb, hoja(
         ["Fecha", "Importe", "Referencia"], rd, { importes: [1], fechas: [0] }), "Rendimientos MP");
+    }
+
+    // Movimientos Payway apartados: rechazados, anulados y pendientes de acreditar
+    const P = pmov || { rechazados: [], anulaciones: [], anulSinPar: [], pendAcred: [] };
+    const porFecha = (a, b) => a.fecha.localeCompare(b.fecha);
+    if (P.rechazados.length) {
+      // un rechazado no tiene ninguna de las cuatro fechas del reporte: nunca se
+      // aprobo. Lo unico que lo identifica es el TID con la terminal y el cupon.
+      const rch = P.rechazados
+        .slice()
+        .sort((a, b) => Number(a.tid) - Number(b.tid))
+        .map((x) => [x.tid, pesos(x.importe), x.referencia, x.detalle, x.terminal]);
+      XLSX.utils.book_append_sheet(wb, hoja(
+        ["TID", "Importe", "Referencia", "Detalle", "Terminal"], rch,
+        { importes: [1] }), "Payway rechazados");
+    }
+    if (P.anulaciones.length || P.anulSinPar.length) {
+      const fil = P.anulaciones
+        .slice()
+        .sort((a, b) => porFecha(a.cobro, b.cobro))
+        .map((p) => [f(p.cobro.fecha), pesos(p.cobro.importe), p.cobro.referencia, p.cobro.detalle,
+                     p.cobro.terminal, f(p.anulacion.fecha), p.anulacion.referencia, "Par único"])
+        .concat(P.anulSinPar.map((x) => [f(x.anulacion.fecha), pesos(x.anulacion.importe),
+                                         x.anulacion.referencia, x.anulacion.detalle, x.anulacion.terminal,
+                                         "", "", `Sin par único: ${x.candidatos} candidatos, revisar a mano`]));
+      XLSX.utils.book_append_sheet(wb, hoja(
+        ["Fecha cobro", "Importe", "Referencia cobro", "Detalle", "Terminal",
+         "Fecha anulación", "Referencia anulación", "Apareo"], fil,
+        { importes: [1], fechas: [0, 5] }), "Payway anulados");
+    }
+    if (P.pendAcred.length) {
+      const pend = P.pendAcred
+        .slice()
+        .sort(porFecha)
+        .map((x) => [f(x.fecha), pesos(x.importe), x.estadoPw, x.estado || "",
+                     x.referencia, x.detalle, x.terminal]);
+      XLSX.utils.book_append_sheet(wb, hoja(
+        ["Fecha", "Importe", "Estado en Payway", "En esta conciliación",
+         "Referencia", "Detalle", "Terminal"], pend,
+        { importes: [1], fechas: [0] }), "Payway pendientes");
     }
 
     // agrupa recibos y movimientos por fecha + importe, con las columnas de "Para revisar"
@@ -1024,23 +1233,23 @@
         // Los descuentos vienen con signo negativo del archivo (son deducciones del
         // bruto). Se guardan POSITIVOS, igual que en Payway: son gastos al debe.
         const gastos = -(pesosTxt(r["Arancel"]) + pesosTxt(r["Interes por plan"]) +
-                         pesosTxt(r["Interes por pago anticipado"]) + pesosTxt(r["Transferencia electr\u00f3nica"]) +
+                         pesosTxt(r["Interes por pago anticipado"]) + pesosTxt(r["Transferencia electrónica"]) +
                          pesosTxt(r["Bonificaciones"]));
         const ivaCf = -pesosTxt(r["IVA"]);
-        const retIibb = -(pesosTxt(r["Percepci\u00f3n de ingresos brutos"]) + pesosTxt(r["SIRTAC"]) +
-                          pesosTxt(r["Retenci\u00f3n de ingresos brutos"]));
-        const retAfip = -(pesosTxt(r["Percepci\u00f3n IVA"]) + pesosTxt(r["Retenci\u00f3n IVA"]));
-        const retGan = -pesosTxt(r["Retenci\u00f3n ganancias"]);
-        const retMuni = -pesosTxt(r["Retenci\u00f3n municipal"]);
-        const impDebCred = -pesosTxt(r["Percepci\u00f3n sobre d\u00e9bitos/cr\u00e9ditos"]);
+        const retIibb = -(pesosTxt(r["Percepción de ingresos brutos"]) + pesosTxt(r["SIRTAC"]) +
+                          pesosTxt(r["Retención de ingresos brutos"]));
+        const retAfip = -(pesosTxt(r["Percepción IVA"]) + pesosTxt(r["Retención IVA"]));
+        const retGan = -pesosTxt(r["Retención ganancias"]);
+        const retMuni = -pesosTxt(r["Retención municipal"]);
+        const impDebCred = -pesosTxt(r["Percepción sobre débitos/créditos"]);
         const anticipos = -pesosTxt(r["Anticipos"]);
         return {
           n: i,
           cuit: String(r["Cuit"]).trim().replace(/-/g, ""),
           fecha: isoNaranja(r["Fecha"]),
-          comercio: String(r["N\u00b0 de comercio"] == null ? "" : r["N\u00b0 de comercio"]).trim(),
-          tipoLiq: String(r["Tipo de liquidaci\u00f3n"] == null ? "" : r["Tipo de liquidaci\u00f3n"]).trim(),
-          nroLiq: String(r["N\u00b0 de liquidaci\u00f3n"] == null ? "" : r["N\u00b0 de liquidaci\u00f3n"]).trim(),
+          comercio: String(r["N° de comercio"] == null ? "" : r["N° de comercio"]).trim(),
+          tipoLiq: String(r["Tipo de liquidación"] == null ? "" : r["Tipo de liquidación"]).trim(),
+          nroLiq: String(r["N° de liquidación"] == null ? "" : r["N° de liquidación"]).trim(),
           bruto: pesosTxt(r["Monto bruto"]),
           neto: pesosTxt(r["Monto neto"]),
           gastos: gastos,
@@ -1598,17 +1807,17 @@
     const naranja = M.cruzarNaranja(extracto, liqNaranja, periodo);
 
     if (naranja.cruzados.length) {
-      avisos.push(naranja.cruzados.length + " liquidaci\u00f3n(es) de Tarjeta Naranja cruzada(s) contra el extracto " +
+      avisos.push(naranja.cruzados.length + " liquidación(es) de Tarjeta Naranja cruzada(s) contra el extracto " +
                   "por " + M.fmt(naranja.cruzados.reduce((a, c) => a + c.liq.neto, 0)) + ". " +
                   "El bruto y los descuentos entran al asiento abiertos, igual que Payway.");
     }
     if (naranja.sinLiq.length) {
-      avisos.push(naranja.sinLiq.length + " cr\u00e9dito(s) de Naranja en el extracto sin liquidaci\u00f3n que los respalde, por " +
+      avisos.push(naranja.sinLiq.length + " crédito(s) de Naranja en el extracto sin liquidación que los respalde, por " +
                   M.fmt(naranja.sinLiq.reduce((a, r) => a + r.importe, 0)) +
                   ". Van enteros a \"" + L.CUENTAS.naranja + "\" hasta que aparezca el documento.");
     }
     if (naranja.sinBanco.length) {
-      avisos.push(naranja.sinBanco.length + " liquidaci\u00f3n(es) de Naranja sin cr\u00e9dito correspondiente en el banco, por " +
+      avisos.push(naranja.sinBanco.length + " liquidación(es) de Naranja sin crédito correspondiente en el banco, por " +
                   M.fmt(naranja.sinBanco.reduce((a, l) => a + l.neto, 0)) + ". " +
                   "Quedan en Pendientes.");
     }
@@ -1792,8 +2001,8 @@
     // ---------------- Tarjeta Naranja
     const tieneTN = R.naranja.cruzados.length || R.naranja.sinLiq.length || R.naranja.sinBanco.length;
     if (tieneTN) {
-      const cabTN = ["Estado", "Fecha liq.", "N\u00ba liquidaci\u00f3n", "N\u00ba comercio", "Bruto", "Gastos",
-                     "IVA", "Ret. IIBB", "Ret. AFIP", "Imp. d\u00e9b./cr\u00e9d.", "Otros desc.", "Neto",
+      const cabTN = ["Estado", "Fecha liq.", "Nº liquidación", "Nº comercio", "Bruto", "Gastos",
+                     "IVA", "Ret. IIBB", "Ret. AFIP", "Imp. déb./créd.", "Otros desc.", "Neto",
                      "Fecha banco", "Importe banco"];
       const filTN = [];
       for (const c of R.naranja.cruzados) {
@@ -1804,11 +2013,11 @@
                      fx(c.banco.fecha), pesos(c.banco.importe)]);
       }
       for (const r of R.naranja.sinLiq) {
-        filTN.push(["Sin liquidaci\u00f3n", "", "", "", "", "", "", "", "", "", "", "",
+        filTN.push(["Sin liquidación", "", "", "", "", "", "", "", "", "", "", "",
                      fx(r.fecha), pesos(r.importe)]);
       }
       for (const l of R.naranja.sinBanco) {
-        filTN.push(["Sin cr\u00e9dito en el banco", fx(l.fecha), l.nroLiq, l.comercio,
+        filTN.push(["Sin crédito en el banco", fx(l.fecha), l.nroLiq, l.comercio,
                      pesos(l.bruto), pesos(l.gastos), pesos(l.ivaCf),
                      pesos(l.retIibb), pesos(l.retAfip), pesos(l.impDebCred),
                      pesos(l.sinCuenta), pesos(l.neto), "", ""]);

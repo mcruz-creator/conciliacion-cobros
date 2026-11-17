@@ -399,6 +399,8 @@
           <p><b>6. Videoconsulta.</b> Un movimiento cuyo detalle dice «Videoconsulta médica» solo puede conciliar contra un recibo de una columna «solo MP» (TVIR). Nunca contra un recibo de mostrador, aunque la fecha y el importe coincidan: la videoconsulta se cobra antes de facturar y por Mercado Pago. Al revés también: un recibo TVIR no concilia contra un movimiento que no sea de Mercado Pago.</p>
           <p><b>7. Rendimientos de Mercado Pago.</b> Los movimientos de Mercado Pago que vienen <b>sin medio de pago</b> son el rendimiento diario que paga la cuenta, no un cobro: tampoco tienen local, ni caja, ni pagador, ni comisión. Se apartan antes de conciliar, van a la hoja <b>Rendimientos MP</b> del Excel y no cuentan en el total de movimientos. Se mira el medio de pago y no el número de identificación, porque ese también viene vacío en cobros reales de pacientes («Producto de Grupooroño», pagados por Payins o MODO), que sí tienen recibo.</p>
           <p>Las columnas «solo MP» (videoconsultas) se cruzan únicamente contra Mercado Pago en las tres primeras reglas, también dentro de un grupo: si el grupo empata en cantidad pero no hay movimientos de Mercado Pago suficientes, no cierra.</p>
+          <p><b>8. Movimientos Payway.</b> Desde octubre de 2026 Payway dejó de dar el reporte de <i>presentados</i> y lo reemplazó por <b>Movimientos</b>, que trae la terminal y el QR en un solo archivo. La pantalla acepta los dos formatos, así que un período viejo se puede reprocesar igual. Del reporte nuevo entran a conciliar los cobros <b>acreditados</b> y las <b>devoluciones</b> acreditadas, estas últimas en importe negativo. Quedan afuera los <b>rechazados</b>, que no son cobros, y los <b>anulados</b>: cada anulación se aparea con un único cobro por autorización, tarjeta, terminal e importe, y salen los dos. Si una anulación no tiene exactamente un cobro que le corresponda no se adivina nada: queda informada aparte para revisarla a mano. Los cobros <b>aprobados pero todavía sin acreditar</b> sí entran, porque el recibo de caja ya existe, y van listados por separado. Cada uno de estos grupos tiene su renglón en pantalla y su hoja en el Excel: <b>Payway rechazados</b>, <b>Payway anulados</b> y <b>Payway pendientes</b>.</p>
+          <p><b>9. El Detalle de Transferencias no se cuenta dos veces.</b> El <i>Detalle de Transferencias</i> de QR sigue existiendo, y hace falta para la otra pantalla porque es el único que trae el neto y las retenciones. Pero sus transferencias ya vienen dentro de Movimientos Payway. Si se cargan los dos archivos, la transferencia que está en los dos se cuenta una sola vez: la clave es <b>fecha + terminal + cupón + importe</b>, verificada única en los dos archivos y en los dos períodos probados. Si alguna transferencia del Detalle <b>no</b> está en Movimientos, no se descarta: se concilia igual y la pantalla lo avisa.</p>
           <p>No hay desempates ni ventanas de días, y la diferencia de importe no puede pasar de $0,99. Con más de un candidato va a <b>Para revisar</b>. Si no aparece ninguno, queda como pendiente.</p>
           <p>Todo lo que queda pendiente —lo de <b>Para revisar</b>, los recibos sin movimiento y los movimientos sin recibo— va además junto en la hoja <b>Hoja de trabajo</b> del Excel, agrupado por fecha e importe y con las mismas columnas, para revisarlo de una sola pasada. En las dos hojas el importe del recibo y el del movimiento van en columnas separadas, para poder sumar cada lado por su cuenta.</p>
         </div>
@@ -504,7 +506,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"
         integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb"
         crossorigin="anonymous"></script>
-<script src="conciliar.js?v=18"></script>
+<script src="conciliar.js?v=19"></script>
 <script>
 (function () {
   "use strict";
@@ -584,10 +586,16 @@
     pintarLista();
   }
 
+  // "alterna" = otro tipo que cumple la misma funcion: basta con uno de los dos.
+  // Payway cambio el formato en octubre de 2026: "Movimientos" trae la terminal y
+  // el QR juntos y reemplaza a "presentados". Se aceptan los dos para poder
+  // reprocesar periodos viejos, pero el viejo es "legado": no se pide ni se
+  // muestra, la ficha aparece recien cuando alguien suelta ese archivo.
   const TIPOS = {
     recibos: { nombre: "Listado de caja", ext: ".xls" },
-    payway: { nombre: "Payway", ext: ".csv · presentados" },
-    qr: { nombre: "QR Payway", ext: ".csv · transferencias" },
+    paywayMov: { nombre: "Movimientos Payway", ext: ".csv · terminal y QR", alterna: "payway" },
+    payway: { nombre: "Payway presentados", ext: ".csv · formato hasta set. 2026", alterna: "paywayMov", legado: true },
+    qr: { nombre: "QR Payway", ext: ".csv · transferencias", alterna: "paywayMov" },
     mp: { nombre: "Mercado Pago", ext: ".xlsx" },
     naranja: { nombre: "Tarjeta Naranja", ext: ".xlsx", opcional: true },
   };
@@ -600,7 +608,16 @@
       if (tipo) (porTipo[tipo] = porTipo[tipo] || []).push(a.nombre);
       else ignorados.push(a.nombre);
     }
-    $("fichas").innerHTML = Object.entries(TIPOS).map(([t, info]) => {
+    // con el alterna cargado el tipo deja de hacer falta
+    const cubierto = (t) => !!porTipo[t] || (TIPOS[t].alterna && !!porTipo[TIPOS[t].alterna]);
+    // la ficha de un archivo que ya no hace falta no se muestra: si esta el
+    // alterna, sobra; si es el formato legado, no se pide. Carga ese archivo y
+    // la ficha aparece.
+    const aLaVista = Object.entries(TIPOS).filter(([t, info]) => porTipo[t] ||
+      (!info.legado && !(info.alterna && porTipo[info.alterna])));
+    $("fichas").className = "fichas" +
+      (aLaVista.length >= 6 ? " seis" : aLaVista.length === 5 ? " cinco" : "");
+    $("fichas").innerHTML = aLaVista.map(([t, info]) => {
       const nombres = porTipo[t];
       const cls = nombres ? "ok" : (info.opcional ? "falta opcional" : "falta");
       return `<div class="ficha ${cls}">
@@ -612,7 +629,7 @@
     }).join("");
     $("ignorados").innerHTML = ignorados.map((n) => `<li>${esc(n)}: no se reconoce el formato, se va a ignorar</li>`).join("");
 
-    const faltan = Object.keys(TIPOS).filter((t) => !TIPOS[t].opcional && !porTipo[t]);
+    const faltan = Object.keys(TIPOS).filter((t) => !TIPOS[t].opcional && !TIPOS[t].legado && !cubierto(t));
     sePuedeConciliar = !!porTipo.recibos;
     // mientras se concilia el boton lo maneja el handler: pintarLista no lo pisa
     if (!conciliando) $("btnProcesar").disabled = !sePuedeConciliar;
@@ -735,6 +752,33 @@
     return `<div class="barra-fila"><span class="et">${etiqueta}</span><div class="barra">${spans}</div><span class="tot">${plata(total)}</span></div>`;
   }
 
+  /** lo que Movimientos Payway deja afuera o marca, informado renglon por renglon */
+  function notasPayway(P) {
+    if (!P) return "";
+    const nota = (txt) => `<div class="barra-fila"><span class="et"></span><div class="nota-neteo">${txt}</div></div>`;
+    const n = (c, uno, varios) => (c === 1 ? uno : varios.replace("%", String(c)));
+    let h = "";
+    if (P.rechazados.cant) {
+      h += nota(`Payway rechazó ${n(P.rechazados.cant, "1 operación", "% operaciones")} por ${plata(P.rechazados.importe)}: no son cobros y quedan afuera. Están en la hoja <b>Payway rechazados</b> del Excel, identificadas por TID, porque el reporte no les pone fecha.`);
+    }
+    if (P.anuladas.pares) {
+      h += nota(`${n(P.anuladas.pares, "1 cobro se anuló", "% cobros se anularon")} en Payway por ${plata(P.anuladas.importe)}: sale el cobro y sale la anulación, los dos. Cada anulación se apareó con un único cobro por autorización, tarjeta, terminal e importe. Están en la hoja <b>Payway anulados</b> del Excel.`);
+    }
+    if (P.anuladas.sinPar) {
+      h += nota(`<b>Revisar a mano:</b> ${n(P.anuladas.sinPar, "1 anulación no tiene", "% anulaciones no tienen")} un único cobro que les corresponda. No se adivinó nada: la anulación quedó afuera y el cobro sigue en la conciliación. Están al pie de la hoja <b>Payway anulados</b>.`);
+    }
+    if (P.pendAcred.cant) {
+      h += nota(`${n(P.pendAcred.cant, "1 cobro está aprobado", "% cobros están aprobados")} pero todavía sin acreditar por ${plata(P.pendAcred.importe)}. Entran igual a la conciliación, porque el recibo de caja ya existe, pero van listados en la hoja <b>Payway pendientes</b> del Excel: el banco no los va a mostrar este mes.`);
+    }
+    if (P.qrDup.cant) {
+      h += nota(`El Detalle de Transferencias y Movimientos Payway traen las mismas transferencias: ${n(P.qrDup.cant, "1 coincidía", "% coincidían")} en los dos por ${plata(P.qrDup.importe)} y se contó una sola vez. La clave es fecha + terminal + cupón + importe, única en los dos archivos.`);
+    }
+    if (P.qrSoloDetalle.cant) {
+      h += nota(`${n(P.qrSoloDetalle.cant, "1 transferencia del Detalle no está", "% transferencias del Detalle no están")} en Movimientos Payway por ${plata(P.qrSoloDetalle.importe)}. No se descartó ninguna: se conciliaron igual.`);
+    }
+    return h;
+  }
+
   function pintarResultado(r) {
     const R = r.resultado;
     $("periodo").textContent = `${fecha(R.desde)} — ${fecha(R.hasta)}`;
@@ -755,13 +799,14 @@
         : "") +
       (R.rendimientos.cant
         ? `<div class="barra-fila"><span class="et"></span><div class="nota-neteo">${R.rendimientos.cant === 1 ? "Se apartó 1 rendimiento" : `Se apartaron ${R.rendimientos.cant} rendimientos`} de la cuenta de Mercado Pago por ${plata(R.rendimientos.importe)} (regla 7). No salen de un cobro: no tienen recibo y quedan fuera del total de movimientos. Están en la hoja <b>Rendimientos MP</b> del Excel.</div></div>`
-        : "");
+        : "") +
+      notasPayway(R.payway);
 
     $("avisos").innerHTML = r.avisos.map((a) => `<li>${esc(a)}</li>`).join("");
 
     const fila = (et, col, cant, imp) =>
       `<tr><td>${et}${col ? `<span class="col">${col}</span>` : ""}</td><td class="num">${cant}</td><td class="num">${plata(imp)}</td></tr>`;
-    const nombresFuente = { PAYWAY: "Payway presentados", QR: "QR Payway", MP: "Mercado Pago" };
+    const nombresFuente = { PAYWAY: "Payway", QR: "QR Payway", MP: "Mercado Pago", NARANJA: "Tarjeta Naranja" };
     $("tablaFuentes").innerHTML =
       `<thead><tr><th>Origen</th><th class="num">Cant.</th><th class="num">Importe</th></tr></thead><tbody>` +
       `<tr class="grupo"><td colspan="3">Recibos de caja</td></tr>` +
