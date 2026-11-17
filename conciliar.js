@@ -136,6 +136,28 @@
     return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
   }
 
+  /** un .xlsx es un ZIP ("PK") y un .xls un contenedor OLE; cualquier otra cosa es texto */
+  function esLibro(bytes) {
+    return (bytes[0] === 0x50 && bytes[1] === 0x4b) || (bytes[0] === 0xd0 && bytes[1] === 0xcf);
+  }
+
+  /**
+   * El Detalle de Transferencias de QR se puede bajar en .csv o en .xlsx, con
+   * las mismas columnas. Devuelve los objetos por encabezado en los dos casos.
+   * El .csv se sigue leyendo igual que siempre; en el libro la fila de
+   * encabezados se busca por "QR ID", porque arriba hay un renglon de titulo.
+   */
+  function objetosQr(bytes) {
+    if (!esLibro(bytes)) return parseCsv(decodificar(bytes), 1);
+    const mat = filasHoja(leerLibro(bytes));
+    const iCab = mat.findIndex((f) => f.some((c) => String(c).trim() === "QR ID"));
+    if (iCab < 0) throw new Error("El detalle de transferencias de QR no tiene la fila de encabezados con 'QR ID'");
+    const cab = mat[iCab].map((c) => String(c).trim());
+    return mat.slice(iCab + 1)
+      .filter((f) => f.some((c) => c !== "" && c !== null && c !== undefined))
+      .map((f) => Object.fromEntries(cab.map((c, i) => [c, f[i] == null ? "" : f[i]])));
+  }
+
   // ------------------------------------------------------------ detección
   function detectar(nombre, bytes) {
     const ext = nombre.toLowerCase().split(".").pop();
@@ -153,6 +175,9 @@
       const txt = filas.map((f) => f.join(" ")).join(" ");
       if (txt.includes("Listado de caja")) return "recibos";
       if (txt.indexOf("N° de comercio") >= 0 && txt.indexOf("Monto bruto") >= 0 && txt.indexOf("Monto neto") >= 0) return "naranja";
+      // Movimientos Payway tambien trae "QR ID", pero no "MONTO NETO" en mayusculas:
+      // ese discriminador es el mismo que usa la pantalla de bancos.
+      if (txt.indexOf("QR ID") >= 0 && txt.indexOf("MONTO NETO") >= 0) return "qr";
       if (txt.toUpperCase().includes("MERCADO PAGO")) return "mp";
     }
     return null;
@@ -201,8 +226,9 @@
     }));
   }
 
-  /** devuelve "AAAA-MM-DD" venga la fecha como ISO o como 31/10/2026 */
+  /** devuelve "AAAA-MM-DD" venga la fecha como ISO, como 31/10/2026 o como serial de Excel */
   function fechaTexto(v) {
+    if (typeof v === "number") return serialAFecha(v);   // el .xlsx guarda la fecha como numero
     const s = String(v == null ? "" : v).trim();
     return s.indexOf("/") >= 0 ? ddmmyyyyAIso(s) : s.slice(0, 10);
   }
@@ -217,7 +243,7 @@
     [fecha, String(terminal).trim(), String(cupon).trim(), importe].join("|");
 
   function leerQr(bytes) {
-    return parseCsv(decodificar(bytes), 1).map((r) => {
+    return objetosQr(bytes).map((r) => {
       const fecha = fechaTexto(r["FECHA DE VENTA"]);
       const importe = cents(r["MONTO BRUTO"]);
       return {
